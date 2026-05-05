@@ -4,9 +4,7 @@
 
 ## Product Demo
 
-<video src="./SkillLens宣传视频.mp4" controls width="100%" muted playsinline></video>
-
-If the video does not play inline, download it here: [SkillLens demo video](./SkillLens宣传视频.mp4).
+https://github.com/user-attachments/assets/8bc9bfce-bfe5-4c3a-a915-9aaf1520969e
 
 SkillLens is an open-source, self-hosted web tool for evaluating **Agent Skills**. Upload a `SKILL.md`, a skill folder, or a skill package, and SkillLens turns it into a quantitative report with rubric scores, evidence, Deep Review feedback, market signals, and concrete improvement suggestions.
 

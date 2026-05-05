@@ -4,9 +4,7 @@
 
 ## 产品演示
 
-<video src="./SkillLens宣传视频.mp4" controls width="100%" muted playsinline></video>
-
-如果视频无法直接播放，可以点击下载查看：[SkillLens 宣传视频](./SkillLens宣传视频.mp4)。
+https://github.com/user-attachments/assets/8bc9bfce-bfe5-4c3a-a915-9aaf1520969e
 
 SkillLens 是一个开源、自托管的 Web 工具，用来评测 **Agent Skills**。你可以上传一个 `SKILL.md`、一个 skill 文件夹，或一个 skill 压缩包，SkillLens 会生成量化报告，包括评分细则、证据、SkillLens Deep Review、市场信号和可执行的改进建议。
 
