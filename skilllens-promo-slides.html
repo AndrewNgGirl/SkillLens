@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillLens 产品宣传幻灯片</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* === THEME VARIABLES === */
+    :root {
+      --bg-primary: #0b0d0f;
+      --bg-secondary: #12161a;
+      --panel: rgba(232, 228, 223, 0.065);
+      --panel-strong: rgba(232, 228, 223, 0.11);
+      --line: rgba(212, 165, 116, 0.24);
+      --text-primary: #f1ece5;
+      --text-secondary: #a9a29a;
+      --text-muted: #77706a;
+      --accent-warm: #d4a574;
+      --accent-gold: #e6c98f;
+      --accent-pink: #e8b4b8;
+      --accent-cyan: #7dd7c4;
+      --shadow: rgba(0, 0, 0, 0.44);
+      --font-display: "Cormorant Garamond", serif;
+      --font-body: "IBM Plex Sans", sans-serif;
+      --slide-padding: clamp(1rem, 4vw, 4rem);
+      --content-gap: clamp(0.55rem, 2vw, 1.75rem);
+      --element-gap: clamp(0.35rem, 1.2vw, 0.9rem);
+      --title-size: clamp(2.1rem, 7vw, 6.2rem);
+      --h2-size: clamp(1.55rem, 4.4vw, 3.6rem);
+      --h3-size: clamp(0.9rem, 2vw, 1.35rem);
+      --body-size: clamp(0.78rem, 1.45vw, 1.08rem);
+      --small-size: clamp(0.62rem, 1vw, 0.82rem);
+      --radius: clamp(0.8rem, 2vw, 1.7rem);
+      --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+      --duration-normal: 0.76s;
+    }
+
+    /* === RESET === */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ===========================================
+    VIEWPORT FITTING: MANDATORY BASE STYLES
+    Include this ENTIRE file in every presentation.
+    These styles ensure slides fit exactly in the viewport.
+    =========================================== */
+
+    /* 1. Lock html/body to viewport */
+    html, body {
+     height: 100%;
+     overflow-x: hidden;
+    }
+
+    html {
+     scroll-snap-type: y mandatory;
+     scroll-behavior: smooth;
+    }
+
+    /* 2. Each slide = exact viewport height */
+    .slide {
+     width: 100vw;
+     height: 100vh;
+     height: 100dvh; /* Dynamic viewport height for mobile browsers */
+     overflow: hidden; /* CRITICAL: Prevent ANY overflow */
+     scroll-snap-align: start;
+     display: flex;
+     flex-direction: column;
+     position: relative;
+    }
+
+    /* 3. Content container with flex for centering */
+    .slide-content {
+     flex: 1;
+     display: flex;
+     flex-direction: column;
+     justify-content: center;
+     max-height: 100%;
+     overflow: hidden; /* Double-protection against overflow */
+     padding: var(--slide-padding);
+    }
+
+    /* 4. ALL typography uses clamp() for responsive scaling */
+    :root {
+     /* Titles scale from mobile to desktop */
+     --title-size: clamp(1.35rem, 4.2vw, 3.25rem);
+     --h2-size: clamp(1.12rem, 3vw, 2.1rem);
+     --h3-size: clamp(0.9rem, 2vw, 1.35rem);
+
+     /* Body text */
+     --body-size: clamp(0.72rem, 1.25vw, 0.98rem);
+     --small-size: clamp(0.62rem, 0.9vw, 0.78rem);
+
+     /* Spacing scales with viewport */
+     --slide-padding: clamp(1rem, 4vw, 4rem);
+     --content-gap: clamp(0.65rem, 1.8vw, 1.55rem);
+     --element-gap: clamp(0.35rem, 0.9vw, 0.85rem);
+    }
+
+    /* 5. Cards/containers use viewport-relative max sizes */
+    .card, .container, .content-box {
+     max-width: min(90vw, 1000px);
+     max-height: min(80vh, 700px);
+    }
+
+    /* 6. Lists auto-scale with viewport */
+    .feature-list, .bullet-list {
+     gap: clamp(0.4rem, 1vh, 1rem);
+    }
+
+    .feature-list li, .bullet-list li {
+     font-size: var(--body-size);
+     line-height: 1.4;
+    }
+
+    /* 7. Grids adapt to available space */
+    .grid {
+     display: grid;
+     grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+     gap: clamp(0.5rem, 1.5vw, 1rem);
+    }
+
+    /* 8. Images constrained to viewport */
+    img, .image-container {
+     max-width: 100%;
+     max-height: min(50vh, 400px);
+     object-fit: contain;
+    }
+
+    /* ===========================================
+    RESPONSIVE BREAKPOINTS
+    Aggressive scaling for smaller viewports
+    =========================================== */
+
+    /* Short viewports (< 700px height) */
+    @media (max-height: 700px) {
+     :root {
+     --slide-padding: clamp(0.75rem, 3vw, 2rem);
+     --content-gap: clamp(0.4rem, 1.5vw, 1rem);
+     --title-size: clamp(1.25rem, 4.5vw, 2.5rem);
+     --h2-size: clamp(1rem, 3vw, 1.75rem);
+     }
+    }
+
+    /* Very short viewports (< 600px height) */
+    @media (max-height: 600px) {
+     :root {
+     --slide-padding: clamp(0.5rem, 2.5vw, 1.5rem);
+     --content-gap: clamp(0.3rem, 1vw, 0.75rem);
+     --title-size: clamp(1.1rem, 4vw, 2rem);
+     --body-size: clamp(0.7rem, 1.2vw, 0.95rem);
+     }
+
+     /* Hide non-essential elements */
+     .nav-dots, .keyboard-hint, .decorative {
+     display: none;
+     }
+    }
+
+    /* Extremely short (landscape phones, < 500px height) */
+    @media (max-height: 500px) {
+     :root {
+     --slide-padding: clamp(0.4rem, 2vw, 1rem);
+     --title-size: clamp(1rem, 3.5vw, 1.5rem);
+     --h2-size: clamp(0.9rem, 2.5vw, 1.25rem);
+     --body-size: clamp(0.65rem, 1vw, 0.85rem);
+     }
+    }
+
+    /* Narrow viewports (< 600px width) */
+    @media (max-width: 600px) {
+     :root {
+     --title-size: clamp(1.25rem, 7vw, 2.5rem);
+     }
+
+     /* Stack grids vertically */
+     .grid {
+     grid-template-columns: 1fr;
+     }
+    }
+
+    /* ===========================================
+    REDUCED MOTION
+    Respect user preferences
+    =========================================== */
+    @media (prefers-reduced-motion: reduce) {
+     *, *::before, *::after {
+     animation-duration: 0.01ms !important;
+     transition-duration: 0.2s !important;
+     }
+
+     html {
+     scroll-behavior: auto;
+     }
+    }
+
+    /* === GLOBAL PRESENTATION STRUCTURE === */
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+    }
+
+    main {
+      position: relative;
+      isolation: isolate;
+    }
+
+    .slide {
+      background:
+        radial-gradient(circle at 16% 18%, rgba(232, 180, 184, 0.14), transparent 28%),
+        radial-gradient(circle at 86% 74%, rgba(212, 165, 116, 0.18), transparent 34%),
+        linear-gradient(135deg, var(--bg-primary), #11161a 58%, #090a0c);
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(230, 201, 143, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(230, 201, 143, 0.035) 1px, transparent 1px);
+      background-size: clamp(2.2rem, 6vw, 5.5rem) clamp(2.2rem, 6vw, 5.5rem);
+      mask-image: radial-gradient(circle at center, black 0%, transparent 76%);
+      pointer-events: none;
+    }
+
+    .slide::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E");
+      opacity: 0.16;
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+    }
+
+    .slide-content {
+      z-index: 2;
+      gap: var(--content-gap);
+      align-items: center;
+      text-align: center;
+    }
+
+    /* === TYPOGRAPHY === */
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: clamp(0.35rem, 1vw, 0.8rem);
+      color: var(--accent-gold);
+      font-size: clamp(0.58rem, 0.82vw, 0.74rem);
+      font-weight: 600;
+      letter-spacing: clamp(0.12em, 0.32vw, 0.24em);
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before,
+    .eyebrow::after {
+      content: "";
+      width: clamp(1.5rem, 5vw, 5rem);
+      height: clamp(0.035rem, 0.12vw, 0.08rem);
+      background: linear-gradient(90deg, transparent, var(--accent-warm));
+    }
+
+    .eyebrow::after {
+      background: linear-gradient(90deg, var(--accent-warm), transparent);
+    }
+
+    h1,
+    h2 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      line-height: 1.08;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: min(92vw, 58rem);
+      font-size: clamp(2rem, 5.8vw, 5.3rem);
+      letter-spacing: clamp(-0.05em, -0.25vw, -0.015em);
+    }
+
+    h2 {
+      max-width: min(92vw, 54rem);
+      font-size: clamp(1.55rem, 4.5vw, 3.8rem);
+      letter-spacing: clamp(-0.045em, -0.22vw, -0.01em);
+    }
+
+    .subtitle {
+      max-width: min(86vw, 44rem);
+      color: var(--text-secondary);
+      font-size: clamp(0.82rem, 1.35vw, 1.08rem);
+      font-weight: 300;
+      line-height: 1.75;
+      text-wrap: balance;
+    }
+
+    .accent {
+      color: var(--accent-gold);
+      font-style: italic;
+    }
+
+    /* === REVEAL ANIMATIONS === */
+    .reveal {
+      opacity: 0;
+      transform: translateY(clamp(1rem, 3vw, 2rem));
+      transition:
+        opacity var(--duration-normal) var(--ease-out-expo),
+        transform var(--duration-normal) var(--ease-out-expo),
+        filter var(--duration-normal) var(--ease-out-expo);
+      filter: blur(clamp(0.2rem, 0.5vw, 0.55rem));
+    }
+
+    .slide.visible .reveal {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+
+    .reveal:nth-child(1) { transition-delay: 0.08s; }
+    .reveal:nth-child(2) { transition-delay: 0.18s; }
+    .reveal:nth-child(3) { transition-delay: 0.28s; }
+    .reveal:nth-child(4) { transition-delay: 0.38s; }
+    .reveal:nth-child(5) { transition-delay: 0.48s; }
+    .reveal:nth-child(6) { transition-delay: 0.58s; }
+
+    /* === DECORATIVE PRODUCT ORBITS === */
+    .orb {
+      position: absolute;
+      border-radius: 999rem;
+      filter: blur(clamp(1.6rem, 5vw, 5rem));
+      opacity: 0.52;
+      pointer-events: none;
+    }
+
+    .orb.one {
+      width: clamp(9rem, 24vw, 24rem);
+      height: clamp(9rem, 24vw, 24rem);
+      left: calc(-1 * clamp(4rem, 10vw, 10rem));
+      top: clamp(2rem, 9vh, 7rem);
+      background: rgba(232, 180, 184, 0.23);
+    }
+
+    .orb.two {
+      width: clamp(8rem, 20vw, 21rem);
+      height: clamp(8rem, 20vw, 21rem);
+      right: calc(-1 * clamp(3rem, 9vw, 8rem));
+      bottom: clamp(1rem, 8vh, 7rem);
+      background: rgba(125, 215, 196, 0.16);
+    }
+
+    .ring {
+      position: absolute;
+      width: clamp(18rem, 46vw, 42rem);
+      height: clamp(18rem, 46vw, 42rem);
+      border: clamp(0.04rem, 0.12vw, 0.09rem) solid rgba(230, 201, 143, 0.16);
+      border-radius: 999rem;
+      inset: auto clamp(2rem, 8vw, 8rem) calc(-1 * clamp(8rem, 20vw, 18rem)) auto;
+      pointer-events: none;
+    }
+
+    /* === SLIDE 01 HERO === */
+    .hero-mark {
+      width: clamp(8.8rem, 22vw, 18rem);
+      height: clamp(3.4rem, 8vw, 6.2rem);
+      border: clamp(0.06rem, 0.15vw, 0.12rem) solid var(--line);
+      border-radius: 999rem;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(232, 228, 223, 0.12), rgba(212, 165, 116, 0.06));
+      box-shadow: 0 clamp(1rem, 3vw, 2.5rem) clamp(2rem, 6vw, 5rem) var(--shadow);
+    }
+
+    .hero-mark span {
+      font-family: var(--font-display);
+      font-size: clamp(1.35rem, 3.5vw, 2.95rem);
+      color: var(--accent-gold);
+      font-weight: 700;
+      letter-spacing: clamp(-0.03em, -0.1vw, -0.01em);
+    }
+
+    /* === PANELS AND CARDS === */
+    .glass-panel {
+      width: min(90vw, 63rem);
+      padding: clamp(0.8rem, 2vw, 1.55rem);
+      border: clamp(0.04rem, 0.12vw, 0.08rem) solid rgba(230, 201, 143, 0.18);
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(241, 236, 229, 0.09), rgba(241, 236, 229, 0.035));
+      box-shadow: 0 clamp(1.2rem, 4vw, 3.5rem) clamp(2.5rem, 8vw, 7rem) var(--shadow);
+      backdrop-filter: blur(clamp(0.5rem, 1.6vw, 1.2rem));
+    }
+
+    .quote {
+      font-family: var(--font-display);
+      font-size: clamp(1.35rem, 4.2vw, 4rem);
+      line-height: 1;
+      color: var(--text-primary);
+      text-wrap: balance;
+    }
+
+    .split {
+      width: min(92vw, 68rem);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: clamp(0.8rem, 2vw, 1.6rem);
+      align-items: stretch;
+    }
+
+    .problem-card,
+    .value-card,
+    .pillar-card {
+      border: clamp(0.04rem, 0.12vw, 0.08rem) solid rgba(230, 201, 143, 0.16);
+      border-radius: var(--radius);
+      background: var(--panel);
+      padding: clamp(0.85rem, 2vw, 1.45rem);
+      text-align: left;
+      box-shadow: 0 clamp(0.8rem, 2.4vw, 2rem) clamp(1.8rem, 5vw, 4rem) rgba(0, 0, 0, 0.24);
+    }
+
+    .problem-card strong,
+    .value-card strong,
+    .pillar-card strong {
+      display: block;
+      color: var(--text-primary);
+      font-size: clamp(0.78rem, 1.28vw, 1.02rem);
+      line-height: 1.38;
+      margin-bottom: clamp(0.32rem, 0.75vw, 0.6rem);
+    }
+
+    .problem-card p,
+    .value-card p,
+    .pillar-card p {
+      color: var(--text-secondary);
+      font-size: var(--small-size);
+      line-height: 1.68;
+    }
+
+    .problem-card.bad {
+      border-color: rgba(232, 180, 184, 0.22);
+    }
+
+    .problem-card.good {
+      border-color: rgba(125, 215, 196, 0.24);
+      background: rgba(125, 215, 196, 0.055);
+    }
+
+    .label {
+      display: inline-flex;
+      margin-bottom: clamp(0.45rem, 1vw, 0.8rem);
+      color: var(--accent-gold);
+      font-size: var(--small-size);
+      font-weight: 700;
+      letter-spacing: clamp(0.06em, 0.18vw, 0.15em);
+      text-transform: uppercase;
+    }
+
+    .pillar-grid {
+      width: min(92vw, 70rem);
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: clamp(0.6rem, 1.25vw, 1rem);
+    }
+
+    .pillar-card {
+      min-height: clamp(7rem, 22vh, 12rem);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      text-align: center;
+      align-items: center;
+    }
+
+    .score {
+      width: clamp(2.25rem, 5vw, 3.7rem);
+      height: clamp(2.25rem, 5vw, 3.7rem);
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--accent-gold);
+      background: rgba(212, 165, 116, 0.09);
+      border: clamp(0.04rem, 0.12vw, 0.08rem) solid rgba(212, 165, 116, 0.24);
+      font-family: var(--font-display);
+      font-size: clamp(0.98rem, 2.1vw, 1.65rem);
+      font-weight: 700;
+    }
+
+    .value-grid {
+      width: min(92vw, 66rem);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: clamp(0.55rem, 1.4vw, 1rem);
+    }
+
+    .value-card {
+      text-align: center;
+    }
+
+    .value-card .icon {
+      display: inline-grid;
+      place-items: center;
+      width: clamp(2.1rem, 4.3vw, 3.35rem);
+      height: clamp(2.1rem, 4.3vw, 3.35rem);
+      margin-bottom: clamp(0.48rem, 1vw, 0.8rem);
+      border-radius: clamp(0.7rem, 1.5vw, 1.2rem);
+      color: var(--accent-gold);
+      background: rgba(230, 201, 143, 0.11);
+      font-size: clamp(0.88rem, 1.65vw, 1.25rem);
+      font-weight: 700;
+    }
+
+    .command {
+      width: min(88vw, 46rem);
+      border: clamp(0.04rem, 0.12vw, 0.08rem) solid rgba(125, 215, 196, 0.22);
+      border-radius: var(--radius);
+      background: rgba(3, 7, 10, 0.66);
+      padding: clamp(0.85rem, 2vw, 1.5rem);
+      text-align: left;
+      font-family: "IBM Plex Sans", sans-serif;
+      box-shadow: inset 0 0 clamp(1.2rem, 4vw, 3.5rem) rgba(125, 215, 196, 0.035);
+    }
+
+    .command code {
+      display: block;
+      color: #cdeee6;
+      font-size: clamp(0.68rem, 1.18vw, 0.9rem);
+      line-height: 1.75;
+      white-space: pre-wrap;
+    }
+
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: clamp(0.45rem, 1vw, 0.9rem);
+    }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(0.55rem, 1.1vw, 0.82rem) clamp(0.95rem, 2vw, 1.65rem);
+      border-radius: 999rem;
+      background: linear-gradient(135deg, var(--accent-gold), var(--accent-warm));
+      color: #14100d;
+      font-size: clamp(0.74rem, 1.12vw, 0.92rem);
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 clamp(0.65rem, 2vw, 1.6rem) clamp(1.3rem, 4vw, 3.2rem) rgba(212, 165, 116, 0.2);
+    }
+
+    .ghost {
+      background: rgba(241, 236, 229, 0.08);
+      color: var(--text-primary);
+      border: clamp(0.04rem, 0.12vw, 0.08rem) solid rgba(241, 236, 229, 0.18);
+      box-shadow: none;
+    }
+
+    /* === NAVIGATION UI === */
+    .progress-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 0%;
+      height: clamp(0.12rem, 0.35vw, 0.22rem);
+      z-index: 20;
+      background: linear-gradient(90deg, var(--accent-gold), var(--accent-cyan));
+      transition: width 0.2s linear;
+    }
+
+    .nav-dots {
+      position: fixed;
+      right: clamp(0.7rem, 2vw, 1.4rem);
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(0.35rem, 0.9vw, 0.65rem);
+    }
+
+    .nav-dot {
+      width: clamp(0.45rem, 0.95vw, 0.75rem);
+      height: clamp(0.45rem, 0.95vw, 0.75rem);
+      border: 0;
+      border-radius: 50%;
+      background: rgba(241, 236, 229, 0.26);
+      cursor: pointer;
+      transition: transform 0.25s var(--ease-out-expo), background 0.25s;
+    }
+
+    .nav-dot.active {
+      background: var(--accent-gold);
+      transform: scale(1.45);
+    }
+
+    .keyboard-hint {
+      position: fixed;
+      left: clamp(0.8rem, 2vw, 1.4rem);
+      bottom: clamp(0.7rem, 2vw, 1.4rem);
+      z-index: 20;
+      color: var(--text-muted);
+      font-size: var(--small-size);
+    }
+
+    /* === RESPONSIVE DENSITY CONTROL === */
+    @media (max-width: 880px) {
+      .split,
+      .value-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .pillar-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 600px) {
+      .split,
+      .value-grid,
+      .pillar-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .pillar-card {
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-bar" aria-hidden="true"></div>
+  <nav class="nav-dots" aria-label="幻灯片导航"></nav>
+  <div class="keyboard-hint">↑ ↓ / Space 切换</div>
+
+  <main>
+    <!-- === SLIDE 01: TITLE === -->
+    <section class="slide">
+      <div class="orb one decorative"></div>
+      <div class="orb two decorative"></div>
+      <div class="ring decorative"></div>
+      <div class="slide-content">
+        <div class="hero-mark reveal"><span>SkillLens</span></div>
+        <p class="eyebrow reveal">Agent Skill Evaluation</p>
+        <h1 class="reveal">发布前，先给你的 Skill 一次<span class="accent">真实评测</span></h1>
+        <p class="subtitle reveal">SkillLens 帮你判断：这个 Agent Skill 是“能用”，还是“真的值得被使用”。</p>
+      </div>
+    </section>
+
+    <!-- === SLIDE 02: PROBLEM === -->
+    <section class="slide">
+      <div class="orb one decorative"></div>
+      <div class="slide-content">
+        <p class="eyebrow reveal">The Problem</p>
+        <h2 class="reveal">写得像 Skill，不等于值得安装</h2>
+        <div class="split reveal">
+          <article class="problem-card bad">
+            <span class="label">常见错觉</span>
+            <strong>格式完整，看起来很专业</strong>
+            <p>有 frontmatter、有 workflow、有示例，但目标用户模糊、价值主张泛、边界情况没处理。</p>
+          </article>
+          <article class="problem-card good">
+            <span class="label">真正问题</span>
+            <strong>它是否有真实需求和商业价值？</strong>
+            <p>别人会不会反复使用？是否比通用 LLM 更有优势？运行成本和稳定性是否能撑住真实场景？</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- === SLIDE 03: CORE RUBRIC === -->
+    <section class="slide">
+      <div class="orb two decorative"></div>
+      <div class="slide-content">
+        <p class="eyebrow reveal">Core Engine</p>
+        <h2 class="reveal">5 大支柱 × 24 子维度 × 100 分</h2>
+        <div class="pillar-grid reveal">
+          <article class="pillar-card">
+            <div class="score">25</div>
+            <strong>Skill 价值</strong>
+            <p>真实需求、商业价值、复用潜力</p>
+          </article>
+          <article class="pillar-card">
+            <div class="score">15</div>
+            <strong>市场竞争力</strong>
+            <p>差异化、替代风险、竞品意识</p>
+          </article>
+          <article class="pillar-card">
+            <div class="score">15</div>
+            <strong>运行成本</strong>
+            <p>上下文、依赖、缓存与分层加载</p>
+          </article>
+          <article class="pillar-card">
+            <div class="score">20</div>
+            <strong>效果稳定性</strong>
+            <p>兜底、校验、幂等和边界情况</p>
+          </article>
+          <article class="pillar-card">
+            <div class="score">25</div>
+            <strong>书写质量</strong>
+            <p>可发现、可执行、安全、可维护</p>
+          </article>
+        </div>
+        <p class="subtitle reveal">所有权重都可自定义：团队可以按商业价值、成本或稳定性重新排序评测标准。</p>
+      </div>
+    </section>
+
+    <!-- === SLIDE 04: OUTPUT VALUE === -->
+    <section class="slide">
+      <div class="orb one decorative"></div>
+      <div class="orb two decorative"></div>
+      <div class="slide-content">
+        <p class="eyebrow reveal">What You Get</p>
+        <h2 class="reveal">不止打分，更给出下一步怎么改</h2>
+        <div class="value-grid reveal">
+          <article class="value-card">
+            <div class="icon">S</div>
+            <strong>总分与等级</strong>
+            <p>S / A / B / C / D，一眼判断发布准备度。</p>
+          </article>
+          <article class="value-card">
+            <div class="icon">↗</div>
+            <strong>雷达图报告</strong>
+            <p>快速看出价值、市场、成本、稳定性短板。</p>
+          </article>
+          <article class="value-card">
+            <div class="icon">AI</div>
+            <strong>Deep Review</strong>
+            <p>结合模型评审真实需求、差异化和改进空间。</p>
+          </article>
+          <article class="value-card">
+            <div class="icon">✓</div>
+            <strong>Top 建议</strong>
+            <p>给出可执行修改方向，而不是一句“再优化”。</p>
+          </article>
+        </div>
+        <p class="subtitle reveal">支持中文 / English 切换，适合中文团队和国际开源用户共同使用。</p>
+      </div>
+    </section>
+
+    <!-- === SLIDE 05: LOCAL DEPLOYMENT CTA === -->
+    <section class="slide">
+      <div class="orb one decorative"></div>
+      <div class="ring decorative"></div>
+      <div class="slide-content">
+        <p class="eyebrow reveal">Open Source · Self-hosted</p>
+        <h2 class="reveal">几分钟本地跑起来，上传你的第一个 Skill</h2>
+        <div class="command reveal" aria-label="本地启动命令">
+          <code>cd web
+npm install
+cp .env.example .env.local
+npm run dev</code>
+        </div>
+        <p class="subtitle reveal">没有模型 Key 也能先预览 UI；配置自己的 DeepSeek / Anthropic Key 后，启用完整 SkillLens Deep Review。</p>
+        <div class="cta-row reveal">
+          <a class="cta" href="#" onclick="return false;">去 GitHub 下载体验</a>
+          <a class="cta ghost" href="#" onclick="return false;">发布前，先跑一遍 SkillLens</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    /* === SLIDE PRESENTATION CONTROLLER === */
+    class SlidePresentation {
+      constructor() {
+        this.slides = Array.from(document.querySelectorAll(".slide"));
+        this.currentSlide = 0;
+        this.dots = [];
+        this.progressBar = document.querySelector(".progress-bar");
+        this.setupIntersectionObserver();
+        this.setupKeyboardNav();
+        this.setupTouchNav();
+        this.setupWheelNav();
+        this.setupNavDots();
+        this.updateProgress();
+      }
+
+      goToSlide(index) {
+        const safeIndex = Math.max(0, Math.min(index, this.slides.length - 1));
+        this.slides[safeIndex].scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      setupIntersectionObserver() {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("visible");
+              this.currentSlide = this.slides.indexOf(entry.target);
+              this.updateProgress();
+              this.updateDots();
+            }
+          });
+        }, { threshold: 0.58 });
+
+        this.slides.forEach((slide) => observer.observe(slide));
+      }
+
+      setupKeyboardNav() {
+        document.addEventListener("keydown", (event) => {
+          const nextKeys = ["ArrowDown", "ArrowRight", " ", "PageDown"];
+          const prevKeys = ["ArrowUp", "ArrowLeft", "PageUp"];
+          if (nextKeys.includes(event.key)) {
+            event.preventDefault();
+            this.goToSlide(this.currentSlide + 1);
+          }
+          if (prevKeys.includes(event.key)) {
+            event.preventDefault();
+            this.goToSlide(this.currentSlide - 1);
+          }
+        });
+      }
+
+      setupTouchNav() {
+        let startY = 0;
+        window.addEventListener("touchstart", (event) => {
+          startY = event.touches[0].clientY;
+        }, { passive: true });
+
+        window.addEventListener("touchend", (event) => {
+          const endY = event.changedTouches[0].clientY;
+          const diff = startY - endY;
+          if (Math.abs(diff) > 40) {
+            this.goToSlide(this.currentSlide + (diff > 0 ? 1 : -1));
+          }
+        }, { passive: true });
+      }
+
+      setupWheelNav() {
+        let locked = false;
+        window.addEventListener("wheel", (event) => {
+          if (locked) return;
+          if (Math.abs(event.deltaY) < 25) return;
+          locked = true;
+          this.goToSlide(this.currentSlide + (event.deltaY > 0 ? 1 : -1));
+          window.setTimeout(() => {
+            locked = false;
+          }, 720);
+        }, { passive: true });
+      }
+
+      setupNavDots() {
+        const nav = document.querySelector(".nav-dots");
+        this.slides.forEach((_, index) => {
+          const dot = document.createElement("button");
+          dot.className = "nav-dot";
+          dot.type = "button";
+          dot.setAttribute("aria-label", `跳转到第 ${index + 1} 页`);
+          dot.addEventListener("click", () => this.goToSlide(index));
+          nav.appendChild(dot);
+          this.dots.push(dot);
+        });
+        this.updateDots();
+      }
+
+      updateDots() {
+        this.dots.forEach((dot, index) => {
+          dot.classList.toggle("active", index === this.currentSlide);
+        });
+      }
+
+      updateProgress() {
+        const progress = ((this.currentSlide + 1) / this.slides.length) * 100;
+        this.progressBar.style.width = `${progress}%`;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      new SlidePresentation();
+    });
+  </script>
+</body>
+</html>

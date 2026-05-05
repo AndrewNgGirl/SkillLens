@@ -1,0 +1,624 @@
+# SkillLens Rubric v3 —— 5 大支柱 × 24 子维度
+# 单一事实源；同时被 skill-scorer (Python CLI) 与 web/SkillLens (TypeScript) 引用。
+#
+# 顶层结构：
+#   total = 100
+#   ├── business_value   25  ← 选题价值（含生产力/情绪/学习/决策/小工具五种类型，由 LLM 识别后按对应标准评）
+#   ├── market           15  ← 市场竞争力（决定能否跑出）
+#   ├── runtime_cost     15  ← 运行成本（决定能否规模化）
+#   ├── reliability      20  ← 效果稳定性（决定能否落地）
+#   └── writeup          25  ← 书写规范性（基础门槛 = 原 8 维收敛）
+#
+# 设计原则：
+# 1. 商业/市场/稳定性 主要靠 LLM 评，规则只能算成本与书写规范
+# 2. 每条 check 都附 fix_zh/fix_en，确保普通人也看得懂怎么改
+# 3. 所有规则与 web/lib/scoring/rules.ts 行为等价
+
+schema_version: 3
+total_score: 100
+
+# ---- 规范兼容：只区分 claude / openclaw ----
+specs:
+  claude:
+    entry_file: SKILL.md
+    required_fields: [name, description]
+    recommended_fields: [license, version]
+    desc_budget_chars: 1024
+  openclaw:
+    entry_file: [SKILL.md, skill.yaml]
+    required_fields: [name, description, version]
+    recommended_fields: [license, tags]
+    desc_budget_chars: 512
+
+# ---- 等级映射（不变） ----
+grades:
+  - { min: 90, grade: S, label_zh: "卓越", label_en: "Exceptional" }
+  - { min: 80, grade: A, label_zh: "优秀", label_en: "Excellent" }
+  - { min: 70, grade: B, label_zh: "良好", label_en: "Good" }
+  - { min: 60, grade: C, label_zh: "及格", label_en: "Pass" }
+  - { min: 0,  grade: D, label_zh: "待改进", label_en: "Needs Work" }
+
+# ---- 5 大支柱 ----
+pillars:
+
+  # ============ 1. 选题商业价值 ============
+  - id: business_value
+    name_zh: 选题价值
+    name_en: Skill Value
+    weight: 25
+    role_zh: 决定天花板
+    role_en: Sets the ceiling
+    tagline_zh: "这个 skill 值不值得存在？有没有人愿意持续用它？这里的'价值'不只看省钱省时间，娱乐、共鸣、表达欲、学习增量同样算数。SkillLens 深度评测会先识别 skill 的价值类型（生产力 / 决策辅助 / 学习成长 / 情绪表达 / 小工具），再用对应类型的标准来打分。"
+    tagline_en: "Is this skill worth existing? Will people keep using it? Value here is broader than 'saves time / money' — emotional resonance, self-expression, learning gains all count. SkillLens Deep Review first identifies the skill's value type (productivity / decision-support / learning / emotion-expression / utility) and judges by that type's standard."
+    color: indigo
+    dimensions:
+
+      - id: biz.target_users
+        name_zh: 目标用户清晰度
+        name_en: Target User Clarity
+        weight: 5
+        checks:
+          - id: biz.target_users.specific
+            type: llm
+            weight: 5
+            desc_zh: "目标用户是否清晰，能否从场景或流程中稳定推断"
+            desc_en: "Checks whether target users are clear or reliably inferable"
+            fix_zh: "最好加 ## Target users 写清 1–2 类核心使用者（角色 + 场景）。如果不单独写，也要在 When to use / Inputs / Example 里让人能一眼推断：比如'开源维护者每周处理 PR'或'25-35 岁加班党通勤路上做 MBTI 自测'。"
+            fix_en: "Prefer adding ## Target users with 1–2 concrete personas + situations. If you skip that section, make the audience obvious through When to use / Inputs / Example, e.g. 'OSS maintainers handling weekly PRs' or 'commuters doing a quick MBTI check'."
+
+      - id: biz.problem_reality
+        name_zh: 用户需求真实度
+        name_en: User Need Realness
+        weight: 6
+        checks:
+          - id: biz.problem_reality.is_real
+            type: llm
+            weight: 6
+            desc_zh: "回应的是真实需求，不是'反正能做就做'。需求可以是痛点（PR 慢、报表难写），也可以是情绪需求（解压、共鸣、社交话题）、学习需求或决策需求。"
+            desc_en: "Addresses a real need — not a 'because we can' itch. The need can be a pain point (slow PRs, tedious reports), but also emotional (decompression, resonance, social currency), learning, or decision-making."
+            fix_zh: "用 1-2 句话描述真实的使用场景：用户在什么情境下、带着什么心理诉求来用这个 skill？现有的替代方案为什么不够好？工具型答'省了多少功夫'；情绪型答'解决了什么情绪缺口、能勾起怎样的共鸣'。"
+            fix_en: "Describe one or two concrete user scenes: in what situation and with what intent does the user reach for this skill? Why aren't the existing alternatives good enough? Productivity skills answer 'how much effort it spares'; emotion skills answer 'what feeling it taps into and what resonance it creates'."
+
+      - id: biz.value_articulation
+        name_zh: 价值主张清晰度
+        name_en: Value Articulation
+        weight: 5
+        checks:
+          - id: biz.value_articulation.matched_to_type
+            type: llm
+            weight: 5
+            desc_zh: "价值主张是否具体，并且匹配这个 skill 的类型"
+            desc_en: "Checks whether the value claim is specific and type-appropriate"
+            fix_zh: "先想清楚自己是哪一类：生产力？情绪表达？学习？决策辅助？小工具？再按对应套路：工具类给一组数字（30 分钟 → 2 分钟）；情绪类给一组场景画面（'凌晨 1 点写完代码点开它，看完想笑'）；学习类描述'用完留下了什么知识或习惯'。空泛的'好用又强大'对哪一类都不算分。"
+            fix_en: "First decide which category you are: productivity / emotion-expression / learning / decision-support / utility. Then play to that lane: utility tools cite numbers (30 min → 2 min); emotion skills paint scenes ('1 a.m., you finish a debug session, open this, and laugh'); learning skills name the concrete takeaway. Vague 'powerful and easy to use' scores in none of the lanes."
+
+      - id: biz.usage_frequency
+        name_zh: 复用价值
+        name_en: Repeat-use Value
+        weight: 5
+        checks:
+          - id: biz.usage_frequency.estimable
+            type: llm
+            weight: 5
+            desc_zh: "是否说清用户会在什么场景下反复使用"
+            desc_en: "Checks whether repeat-use scenarios are clear"
+            fix_zh: "在 ## When to use 附近补一句频率/复用判断：'高频：每个 PR'/'中频：每周一次复盘'/'低频高记忆点：每次生日重测一次 + 容易分享给朋友'。情绪/娱乐型还可补一条'传播性'：用户用完愿不愿意主动分享。"
+            fix_en: "Near ## When to use add a cadence + repeat note: 'high — every PR', 'mid — weekly retro', or 'low but memorable — re-take on each birthday, easy to share with friends'. For emotion / fun skills, also note shareability: do users naturally want to pass it on after using?"
+
+      - id: biz.moat_potential
+        name_zh: 沉淀 / 记忆点潜力
+        name_en: Moat / Memorability Potential
+        weight: 4
+        checks:
+          - id: biz.moat_potential.compounding
+            type: llm
+            weight: 4
+            desc_zh: "是否具备持续使用后的沉淀、记忆点或传播性"
+            desc_en: "Checks whether repeated use creates memory, assets, or shareability"
+            fix_zh: "工具型：让第 100 次调用比第 1 次多点东西 —— 持久化中间产物、积累团队规则等。情绪型：固化一个'品牌口吻'（比如永远用反向毒鸡汤的语气）、设计可截图传播的金句模板，让用户一眼能认出'这是 XX 的产物'。"
+            fix_en: "Utility: make call #100 know more than call #1 — persist intermediate artifacts, accumulate team rules. Emotion: nail a signature voice (e.g., always reverse-affirmation tone), design screenshot-worthy line templates, so users instantly recognize 'this is XX's output'."
+
+  # ============ 2. 市场竞争力 ============
+  - id: market
+    name_zh: 市场竞争力
+    name_en: Market Competitiveness
+    weight: 15
+    role_zh: 决定能否跑出
+    role_en: Determines breakout odds
+    tagline_zh: "已经有人做了吗？跟同类比，你凭什么更好？写得再好，赛道太挤也跑不出来。"
+    tagline_en: "Has someone built this already? Why are you better than the alternatives? Even great writing can't save a saturated lane."
+    color: violet
+    dimensions:
+
+      - id: market.differentiation
+        name_zh: 差异化
+        name_en: Differentiation
+        weight: 5
+        checks:
+          - id: market.differentiation.clear
+            type: llm
+            weight: 5
+            desc_zh: "差异化清晰，能用一句话讲清楚"
+            desc_en: "Differentiation is clear in one sentence"
+            fix_zh: "在 ## When to use 之后加一段 ## Why this skill，明确说'相比 X 类似工具，本 skill 多做了 Y / 少做了 Z'。模糊的'更好用更智能'不算差异化。"
+            fix_en: "Add ## Why this skill stating 'unlike X, this does Y / skips Z'. 'Smarter and easier' is NOT differentiation."
+
+      - id: market.scope_focus
+        name_zh: 聚焦度
+        name_en: Scope Focus
+        weight: 4
+        checks:
+          - id: market.scope_focus.disciplined
+            type: llm
+            weight: 4
+            desc_zh: "做一件事做到 10 分，不是什么都能做的 5 分版本"
+            desc_en: "Does one thing well, not 'a bit of everything'"
+            fix_zh: "如果 description 里出现 ≥ 3 个不相关动词（'生成 + 翻译 + 校对 + 排版'），考虑拆成多个 skill。聚焦的 skill 在 Agent 调度时也更容易被选对。"
+            fix_en: "If description lists ≥ 3 unrelated verbs ('generate + translate + proofread + format'), consider splitting. Focused skills are easier for agents to route correctly."
+
+      - id: market.llm_replaceable
+        name_zh: 通用模型可替代风险
+        name_en: LLM Replaceability Risk
+        weight: 3
+        checks:
+          - id: market.llm_replaceable.has_edge
+            type: llm
+            weight: 3
+            desc_zh: "动作不是裸 LLM 直接就能干的（有领域知识 / 工具 / 数据加成）"
+            desc_en: "Adds domain knowledge, tools, or data beyond a bare LLM call"
+            fix_zh: "如果 skill 的全部价值就是'写一段更好的 prompt'，用户为什么不直接问 GPT？补充：领域 prompt 模板、外部数据接入、规则校验、固定输出 schema 等任意一项。"
+            fix_en: "If the skill is just 'a better prompt', users could ask GPT directly. Add domain prompts, external data, validation rules, or fixed output schemas — any of them."
+
+      - id: market.existing_alternatives
+        name_zh: 竞品调研意识
+        name_en: Competitor Awareness
+        weight: 3
+        checks:
+          - id: market.existing_alternatives.surveyed
+            type: llm
+            weight: 3
+            desc_zh: "是否主动调研并说明真实同类项目与差异点"
+            desc_en: "Checks whether real alternatives and differentiation are acknowledged"
+            fix_zh: "在 ## Why this skill 里点名 1–2 个真实同类项目（GitHub repo / 官方 skill / 商业产品都行），说明你的差异点。完全'天下无敌没有对手'通常意味着调研不充分。"
+            fix_en: "In ## Why this skill, name 1–2 real alternatives (GitHub repo / official skill / commercial product) and state your differentiation. Claims of 'no competition' usually mean undersampled research."
+
+  # ============ 3. 运行成本 ============
+  - id: runtime_cost
+    name_zh: 运行成本
+    name_en: Runtime Cost
+    weight: 15
+    role_zh: 决定能否规模化
+    role_en: Decides scalability
+    tagline_zh: "Agent 每次触发要烧多少 token、跑多久、花多少钱？成本不可控，再好的功能也跑不到 100 个用户。"
+    tagline_en: "How many tokens, seconds, dollars per call? Without cost control, no skill scales past 100 users."
+    color: emerald
+    dimensions:
+
+      - id: cost.context_budget
+        name_zh: 上下文预算
+        name_en: Context Budget
+        weight: 4
+        checks:
+          - id: cost.context_budget.skill_md_size
+            type: rule
+            weight: 4
+            desc_zh: "SKILL.md 加载体积合理（≤ 6000 字符 ≈ ≤ 2k tokens）"
+            desc_en: "SKILL.md fits a tight budget (<= 6000 chars ≈ <= 2k tokens)"
+            fix_zh: "把详尽规范、长示例搬到 references/*.md；SKILL.md 只留'触发判断 + 顶层流程'。每次调用都会全文加载，每多 1k 字符 ≈ 多 0.3k tokens 的开销。"
+            fix_en: "Move long specs and big examples to references/*.md. Keep SKILL.md to 'trigger + top-level flow' — it loads fully on every call (≈ 0.3k tokens per 1k chars)."
+
+      - id: cost.reference_layering
+        name_zh: 分层加载
+        name_en: Reference Layering
+        weight: 4
+        checks:
+          - id: cost.reference_layering.has_dirs
+            type: rule
+            weight: 4
+            desc_zh: "用 references/ scripts/ assets/ 子目录分层按需加载"
+            desc_en: "Uses references/ scripts/ assets/ for on-demand loading"
+            fix_zh: "建三个子目录：references/（长文档）、scripts/（确定性脚本）、assets/（模板和配置），SKILL.md 里只用一行路径引用即可。Agent 真要用时才加载。"
+            fix_en: "Create three subdirs: references/ (docs), scripts/ (code), assets/ (templates). Reference each by path in SKILL.md so the agent loads on demand."
+
+      - id: cost.external_dependencies
+        name_zh: 外部依赖重量
+        name_en: External Dependency Weight
+        weight: 4
+        checks:
+          - id: cost.external_dependencies.declared
+            type: rule
+            weight: 2
+            desc_zh: "对外部 API / 二进制依赖有显式列表"
+            desc_en: "Lists external APIs / binaries explicitly"
+            fix_zh: "建 ## Dependencies 章节，按表格列出每个依赖：名称 / 类型（API/CLI/lib）/ 是否付费 / 大致单次成本。让用户事先有数。"
+            fix_en: "Add ## Dependencies as a table: name / type (API/CLI/lib) / paid? / cost per call. Let users budget upfront."
+
+          - id: cost.external_dependencies.weight_assessed
+            type: llm
+            weight: 2
+            desc_zh: "外部依赖整体重量合理（不是动辄调多个付费 API）"
+            desc_en: "Dependency footprint is reasonable (not stacking paid APIs)"
+            fix_zh: "如果一次执行要调 3+ 个付费 API，考虑能否合并、缓存、或换更便宜的本地实现。在 SKILL.md 里讨论一下成本权衡。"
+            fix_en: "If one run calls 3+ paid APIs, consider consolidating, caching, or swapping for cheaper local impl. Discuss the cost trade-off in SKILL.md."
+
+      - id: cost.cache_friendliness
+        name_zh: 可缓存性
+        name_en: Cache Friendliness
+        weight: 3
+        checks:
+          - id: cost.cache_friendliness.idempotent_inputs
+            type: llm
+            weight: 3
+            desc_zh: "输入有确定性指纹，重复执行能命中缓存"
+            desc_en: "Inputs have a deterministic fingerprint enabling cache reuse"
+            fix_zh: "在 ## Inputs 里说清楚：哪些字段决定输出、哪些字段不影响。决定输出的字段做 hash 后可作为缓存 key，N 次重跑只算 1 次钱。"
+            fix_en: "In ## Inputs, mark which fields drive the output. Hash those for a cache key — N reruns then cost just 1 call."
+
+  # ============ 4. 效果稳定性 ============
+  - id: reliability
+    name_zh: 效果稳定性
+    name_en: Output Reliability
+    weight: 20
+    role_zh: 决定能否落地
+    role_en: Determines deployability
+    tagline_zh: "交给 LLM 干会不会瞎编？跑 10 次结果抖不抖？任务匹配度差，再聪明的 prompt 也救不回来。"
+    tagline_en: "Will the LLM hallucinate? Are 10 runs consistent? If the task doesn't fit, no amount of prompt can save it."
+    color: amber
+    dimensions:
+
+      - id: rel.task_model_fit
+        name_zh: 任务模型匹配度
+        name_en: Task–Model Fit
+        weight: 5
+        checks:
+          - id: rel.task_model_fit.in_zone
+            type: llm
+            weight: 5
+            desc_zh: "任务在 LLM 稳定能力区（结构化提取/创作 🟢；复杂推理 🟡；数值精算 🔴）"
+            desc_en: "Task is in the LLM's reliable zone (structured/creative 🟢, complex reasoning 🟡, exact arithmetic 🔴)"
+            fix_zh: "如果任务包含'精确计算 / 多跳推理 / 实时数据 / 长上下文搜索'这些 LLM 不稳的领域，把这部分挪到脚本，让 LLM 只负责它擅长的：理解输入、组织语言、给结构化结论。"
+            fix_en: "If the task involves precise math, multi-hop reasoning, real-time data, or long-context search — push those to scripts. Let the LLM do what it's good at: comprehension, language, structured judgment."
+
+      - id: rel.script_fallback
+        name_zh: 脚本兜底
+        name_en: Script Fallback
+        weight: 4
+        checks:
+          - id: rel.script_fallback.has_scripts
+            type: rule
+            weight: 4
+            desc_zh: "关键步骤用 scripts/ 下的代码兜底，不是纯让模型发挥"
+            desc_en: "Critical steps are anchored by code in scripts/, not pure LLM improv"
+            fix_zh: "建 scripts/ 目录，把关键的解析、校验、计算用脚本实现，SKILL.md 里调用脚本而不是让 LLM 生成。脚本输出确定性强，复跑结果一致。"
+            fix_en: "Create scripts/ and implement parsing, validation, computation in code. Have SKILL.md invoke scripts rather than let the LLM generate them. Code outputs are deterministic across runs."
+
+      - id: rel.output_validation
+        name_zh: 输出校验
+        name_en: Output Validation
+        weight: 4
+        checks:
+          - id: rel.output_validation.declared
+            type: rule
+            weight: 2
+            desc_zh: "明确声明输出格式（JSON schema / 字段列表 / 约束）"
+            desc_en: "Output format is declared (JSON schema / field list / constraints)"
+            fix_zh: "在 ## Outputs 下贴一段 JSON schema 或字段列表，规定字段名、类型、是否必填。Agent 照着填，错就当场发现。"
+            fix_en: "Under ## Outputs, paste a JSON schema or field list with names/types/required flags. Agent fills it; mistakes surface immediately."
+
+          - id: rel.output_validation.enforced
+            type: llm
+            weight: 2
+            desc_zh: "声明的格式有真正的校验步骤（不是只贴 schema 不验证）"
+            desc_en: "Declared format is actually validated (not just documented)"
+            fix_zh: "在 ## Workflow 最后加一步'校验输出'，用 jsonschema / pydantic / 正则检查，失败时按 ## Failure 路径处理。"
+            fix_en: "Add a final Workflow step 'validate output' using jsonschema / pydantic / regex; on failure, follow the ## Failure path."
+
+      - id: rel.idempotency
+        name_zh: 幂等性
+        name_en: Idempotency
+        weight: 3
+        checks:
+          - id: rel.idempotency.discussed
+            type: llm
+            weight: 3
+            desc_zh: "讨论了同输入多次跑结果是否一致"
+            desc_en: "Discusses whether repeated runs yield the same output"
+            fix_zh: "加一段 ## Determinism：哪些步骤是幂等（脚本/规则）、哪些有抖动（LLM 自由生成）。可以建议设 temperature=0、给固定 seed 等做法。"
+            fix_en: "Add ## Determinism: which steps are idempotent (scripts/rules) vs. variable (free LLM). Recommend temperature=0, fixed seeds, etc."
+
+      - id: rel.failure_path
+        name_zh: 异常路径
+        name_en: Failure Path
+        weight: 2
+        checks:
+          - id: rel.failure_path.explicit
+            type: llm
+            weight: 2
+            desc_zh: "失败时怎么办：重试 / 降级 / 报错告知用户"
+            desc_en: "Spells out failure handling: retry / degrade / report"
+            fix_zh: "在 ## Failure 章节列每种可能的失败：上游 API down → 重试 3 次后报错；输入不规范 → 直接告诉用户字段缺失；输出校验不过 → 重生成 1 次后人工接管。"
+            fix_en: "List every failure mode under ## Failure: upstream API down → retry 3× then error; bad input → tell user which field is missing; validation fail → regenerate once then escalate."
+
+      - id: rel.edge_cases
+        name_zh: 边界情况
+        name_en: Edge Cases
+        weight: 2
+        checks:
+          - id: rel.edge_cases.discussed
+            type: llm
+            weight: 2
+            desc_zh: "讨论了 2–3 个边界场景或已知缺陷"
+            desc_en: "Discusses 2–3 edge cases or known limitations"
+            fix_zh: "加 ## Known limitations 列 2–3 条已知容易出问题的输入：超长文本、多语种混排、空文件等，并说明应对方式。"
+            fix_en: "Add ## Known limitations covering 2–3 trouble inputs (very long text, mixed languages, empty files) with mitigations."
+
+  # ============ 5. 书写规范性 ============
+  - id: writeup
+    name_zh: 书写规范性
+    name_en: Writeup Quality
+    weight: 25
+    role_zh: 基础门槛
+    role_en: Baseline threshold
+    tagline_zh: "Agent 读这份文档能不能一次读懂、照做？这是被调用的前提，是基础门槛而非天花板。"
+    tagline_en: "Can the agent read this document and follow it correctly the first time? This is the prerequisite for being called at all."
+    color: slate
+    dimensions:
+
+      - id: meta
+        name_zh: 元数据规范性
+        name_en: Metadata Conformance
+        weight: 4
+        checks:
+          - id: meta.frontmatter_valid
+            type: rule
+            weight: 1
+            desc_zh: "开头的 --- 元数据块能正常解析"
+            desc_en: "The --- frontmatter block parses"
+            fix_zh: "在 SKILL.md 最前面用两行 --- 包裹 YAML 元数据块，保证 key: value 格式（冒号后有空格）。"
+            fix_en: "Wrap a YAML block with --- at the very top; keys must be 'key: value' (space after colon)."
+            example_zh: |
+              ---
+              name: my-skill
+              description: Use when ...
+              ---
+            example_en: |
+              ---
+              name: my-skill
+              description: Use when ...
+              ---
+
+          - id: meta.required_fields
+            type: rule
+            weight: 1.5
+            desc_zh: "必填字段齐备（name、description 等）"
+            desc_en: "Required fields are present"
+            fix_zh: "至少要有 name（kebab-case）和 description（告诉 Agent 什么时候用你）。"
+            fix_en: "At minimum: name (kebab-case) and description (when to trigger)."
+
+          - id: meta.recommended_fields
+            type: rule
+            weight: 1
+            desc_zh: "推荐字段也齐备（license / version 等）"
+            desc_en: "Recommended fields present (license / version)"
+            fix_zh: "加 license（如 MIT）和 version（如 0.1.0），方便复用。"
+            fix_en: "Add license (e.g. MIT) and version (e.g. 0.1.0) for reusability."
+
+          - id: meta.name_format
+            type: rule
+            weight: 0.5
+            desc_zh: "name 字段是 kebab-case，没空格和大写"
+            desc_en: "name is kebab-case, no whitespace"
+            fix_zh: "改成全小写 + 连字符，如 `my-skill`。"
+            fix_en: "Use lowercase-with-hyphens, e.g. `my-skill`."
+
+      - id: discoverability
+        name_zh: 可发现性
+        name_en: Discoverability
+        weight: 5
+        checks:
+          - id: disc.length_ok
+            type: rule
+            weight: 1
+            desc_zh: "description 长度合适（不过短也不过长）"
+            desc_en: "description length is in the sweet spot"
+            fix_zh: "控制在 80–500 字之间，覆盖：做什么 + 什么场景 + 触发词。"
+            fix_en: "Keep between 80–500 chars covering: what / when / triggers."
+
+          - id: disc.has_trigger_cue
+            type: rule
+            weight: 1.5
+            desc_zh: "description 里包含明确的触发线索"
+            desc_en: "description contains an explicit trigger cue"
+            fix_zh: "加一句'用于… / Use when the user asks to …'告诉 Agent 什么情况下用你。"
+            fix_en: "Add 'Use when the user asks to …' spelling out the trigger condition."
+
+          - id: disc.third_person
+            type: rule
+            weight: 0.5
+            desc_zh: "用第三人称，不用'我将' / 'I will'"
+            desc_en: "Written in third person"
+            fix_zh: "把 'I will do X' 改成 'Does X' —— description 是客观说明不是承诺。"
+            fix_en: "Rewrite 'I will do X' as 'Does X' — descriptions are objective, not promises."
+
+          - id: disc.keyword_coverage
+            type: llm
+            weight: 2
+            desc_zh: "覆盖了足够的触发关键词和同义说法"
+            desc_en: "Covers enough trigger keywords and synonyms"
+            fix_zh: "列出用户可能用的近义词，比如打分 skill 应同时出现：评分 / 审计 / review / rate / audit / lint。"
+            fix_en: "Cover synonyms users might type. A scoring skill should mention 'review, rate, audit, lint, grade' etc."
+
+      - id: structure
+        name_zh: 结构与可读性
+        name_en: Structure & Readability
+        weight: 3
+        checks:
+          - id: struct.has_headings
+            type: rule
+            weight: 1
+            desc_zh: "用 ## 划分清楚的章节（至少 2 个）"
+            desc_en: "Uses clear sections (>= 2 H2 headings)"
+            fix_zh: "建议骨架：## When to use / ## Inputs / ## Workflow / ## Outputs / ## Example。"
+            fix_en: "Skeleton: ## When to use / ## Inputs / ## Workflow / ## Outputs / ## Example."
+
+          - id: struct.has_workflow
+            type: rule
+            weight: 1.5
+            desc_zh: "有显式的 Workflow 章节，用编号列出每步"
+            desc_en: "Has explicit numbered Workflow section"
+            fix_zh: "加 ## Workflow，用 1/2/3 列出 Agent 执行每一步。"
+            fix_en: "Add ## Workflow with numbered steps."
+            example_zh: |
+              ## Workflow
+              1. 读取输入
+              2. 校验格式
+              3. 调用工具 X
+              4. 输出 JSON
+
+          - id: struct.md_well_formed
+            type: rule
+            weight: 0.5
+            desc_zh: "Markdown 写得对（代码块都闭合等）"
+            desc_en: "Well-formed Markdown (fences closed, etc.)"
+            fix_zh: "确保每个 ``` 都成对、每个 [链接]() 括号都闭合。"
+            fix_en: "Ensure every ``` is paired and brackets close."
+
+      - id: actionability
+        name_zh: 可执行性
+        name_en: Actionability
+        weight: 6
+        checks:
+          - id: act.steps_atomic
+            type: llm
+            weight: 2
+            desc_zh: "每一步只做一件事"
+            desc_en: "Each step is atomic"
+            fix_zh: "把'读取并校验并输出'拆成三步。一步一个动词、一个明确结果。"
+            fix_en: "Split 'read-validate-output' into three steps. One verb, one result per step."
+
+          - id: act.io_explicit
+            type: llm
+            weight: 1.5
+            desc_zh: "输入、输出、前置条件都说清楚"
+            desc_en: "Inputs, outputs, preconditions are explicit"
+            fix_zh: "加 ## Inputs 和 ## Outputs 两节，分别说'要给什么 + 你会返回什么'。"
+            fix_en: "Add ## Inputs and ## Outputs listing what's fed in and what comes back."
+
+          - id: act.tool_calls_clear
+            type: rule
+            weight: 1
+            desc_zh: "工具/命令调用放在可复制的代码块里"
+            desc_en: "Tool/command calls are in reproducible code blocks"
+            fix_zh: "用 ```bash / ```python 包起来，参数写完整，不留 '<your-path>' 又不解释。"
+            fix_en: "Wrap commands in fences with concrete arguments, not unexplained placeholders."
+
+          - id: act.no_ambiguity
+            type: llm
+            weight: 1
+            desc_zh: "关键步骤里没有'也许 / 可能 / 看情况'"
+            desc_en: "No vague qualifiers in critical steps"
+            fix_zh: "把'可能需要重试'改成'失败后重试 3 次，仍失败则报错'。能定量的就定量。"
+            fix_en: "Replace 'maybe retry' with 'retry up to 3 times, then report failure'."
+
+          - id: act.has_examples
+            type: rule
+            weight: 0.5
+            desc_zh: "至少给了一条端到端使用示例"
+            desc_en: "At least one end-to-end example"
+            fix_zh: "加 ## Example 给一组真实的'输入 → 执行 → 输出'，别只写 <your-input>。"
+            fix_en: "Add ## Example with concrete input → action → output. Don't leave <your-input>."
+
+      - id: safety
+        name_zh: 安全合规
+        name_en: Safety & Compliance
+        weight: 3
+        checks:
+          - id: safe.dangerous_ops_flagged
+            type: rule
+            weight: 1
+            desc_zh: "破坏性操作有警告或确认"
+            desc_en: "Destructive operations are flagged"
+            fix_zh: "对 rm -rf / git push --force / DROP TABLE 这类命令前加 '⚠️ 危险'，并要求二次确认或更安全的替代。"
+            fix_en: "Prefix rm -rf / git push --force / DROP TABLE with '⚠️ Destructive' and require a confirm or safer path."
+
+          - id: safe.secrets_policy
+            type: rule
+            weight: 1
+            desc_zh: "没在文档里直接嵌入 API Key / 密钥"
+            desc_en: "No embedded API keys / secrets"
+            fix_zh: "把裸写的 key 换成占位符 `$ANTHROPIC_API_KEY`，并说一句'从环境变量读取，不要提交到仓库'。"
+            fix_en: "Replace literal keys with `$ANTHROPIC_API_KEY` and note 'read from env, do not commit'."
+
+          - id: safe.least_privilege
+            type: llm
+            weight: 0.5
+            desc_zh: "只申请完成任务必须的权限和工具"
+            desc_en: "Requests only the tools / permissions really needed"
+            fix_zh: "列出实际会用的工具/目录/网络域名；去掉'万一会用'的兜底声明。宁少勿多。"
+            fix_en: "List the exact tools / paths / domains needed. Drop 'just in case' claims."
+
+          - id: safe.privacy
+            type: llm
+            weight: 0.5
+            desc_zh: "涉及用户数据时讲清楚怎么存 / 怎么删"
+            desc_en: "Privacy handling described when user data is involved"
+            fix_zh: "加 ## Privacy：数据在哪处理、是否落盘、保留多久、怎么删。无用户数据就写'No user data is stored'。"
+            fix_en: "Add ## Privacy: where data is processed, persistence, retention, deletion. If none: 'No user data is stored'."
+
+      - id: maintainability
+        name_zh: 可维护性
+        name_en: Maintainability
+        weight: 4
+        checks:
+          - id: maint.has_version
+            type: rule
+            weight: 1
+            desc_zh: "有版本号"
+            desc_en: "Has a version number"
+            fix_zh: "在 frontmatter 里加 `version: 0.1.0`。"
+            fix_en: "Add `version: 0.1.0`."
+
+          - id: maint.declares_deps
+            type: rule
+            weight: 1.5
+            desc_zh: "声明了依赖 / 运行环境"
+            desc_en: "Declares dependencies / runtime"
+            fix_zh: "加 requirements.txt / package.json，或 SKILL.md 里加 ## Dependencies 一节列清楚。"
+            fix_en: "Add requirements.txt / package.json OR a ## Dependencies section listing tools & versions."
+
+          - id: maint.has_tests
+            type: rule
+            weight: 1
+            desc_zh: "有测试文件或样例输入/期望输出"
+            desc_en: "Has tests or sample IO"
+            fix_zh: "建 tests/ 目录放 1–2 组样例输入 + 期望输出，方便回归。"
+            fix_en: "Add tests/ with 1–2 sample input + expected output pairs."
+
+          - id: maint.has_changelog
+            type: rule
+            weight: 0.5
+            desc_zh: "有 CHANGELOG 或显式更新记录"
+            desc_en: "Has a CHANGELOG or update log"
+            fix_zh: "建 CHANGELOG.md，每次版本升级记一行。"
+            fix_en: "Add CHANGELOG.md, one line per version bump."
+
+# ---- Bonus：跨规范可移植性（+5 封顶，不占主池） ----
+bonus:
+  - id: portability
+    max: 5
+    checks:
+      - id: port.spec_agnostic_frontmatter
+        type: rule
+        weight: 2
+        desc_zh: "frontmatter 字段三规范通用"
+        desc_en: "frontmatter fields usable across all three specs"
+        fix_zh: "只用 name / description / version / license / tags / author 这几个通用字段，不要加某家专属 key。"
+        fix_en: "Stick to name / description / version / license / tags / author. Avoid vendor-specific keys."
+
+      - id: port.no_hardcoded_tools
+        type: llm
+        weight: 3
+        desc_zh: "不硬编码某一家的工具名 / 路径 / 模型名"
+        desc_en: "No hardcoded vendor-specific tool names / paths / models"
+        fix_zh: "把 'Cursor 的 xxx 工具' 改成对能力的描述，如'使用任意 file-read 工具'；避免绑死模型名。"
+        fix_en: "Swap 'Cursor's xxx tool' for capability language like 'any file-read tool'. Avoid hardcoding model names."

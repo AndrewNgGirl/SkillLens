@@ -1,0 +1,3 @@
+# Runtime deps for pr-reviewer
+# (only stdlib + your chosen linter binaries; this file is intentionally light)
+requests>=2.31  # optional: nicer GitHub client than urllib

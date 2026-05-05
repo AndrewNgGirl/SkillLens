@@ -1,0 +1,17 @@
+{
+  "magic-number-and-long-fn": {
+    "summary": "2 style issues; safe to merge after fixes.",
+    "comments": [
+      {"file": "src/utils.py", "line": 10, "severity": "warn", "message": "process_data has 4 positional params; group into a dataclass per §2.2."},
+      {"file": "src/utils.py", "line": 11, "severity": "info", "message": "Magic number 0.85; extract to a named constant."}
+    ],
+    "approve": "comment"
+  },
+  "import-style": {
+    "summary": "1 style issue.",
+    "comments": [
+      {"file": "src/x.py", "line": 1, "severity": "error", "message": "Wildcard imports are forbidden by §5.1."}
+    ],
+    "approve": "request_changes"
+  }
+}

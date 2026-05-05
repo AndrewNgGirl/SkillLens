@@ -1,0 +1,12 @@
+[
+  {
+    "name": "magic-number-and-long-fn",
+    "pr_url": "fixture://magic-number",
+    "diff": "diff --git a/src/utils.py b/src/utils.py\n@@ -10,3 +10,8 @@\n+def process_data(a, b, c, d):\n+    threshold = 0.85\n+    return [x for x in a if x > threshold]\n"
+  },
+  {
+    "name": "import-style",
+    "pr_url": "fixture://wildcard",
+    "diff": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1 @@\n-from foo import a\n+from foo import *\n"
+  }
+]
