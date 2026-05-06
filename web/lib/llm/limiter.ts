@@ -31,19 +31,14 @@ class InMemoryLimiter implements RateLimiter {
 
 export const limiter: RateLimiter = new InMemoryLimiter();
 
-/** 本地开发白名单：回环地址不走限流；生产部署时通过 LLM_BYPASS_LOCAL=0 关闭。 */
+/** 本地开发白名单：只允许真实回环地址绕过；生产部署时通过 LLM_BYPASS_LOCAL=0 关闭。 */
 export function isLocalBypass(key: string): boolean {
   if (process.env.LLM_BYPASS_LOCAL === "0") return false;
   return (
     key === "127.0.0.1" ||
     key === "::1" ||
     key === "localhost" ||
-    key === "anon" ||
-    key.startsWith("192.168.") ||
-    key.startsWith("10.") ||
-    key.startsWith("::ffff:127.") ||
-    key.startsWith("::ffff:192.168.") ||
-    key.startsWith("::ffff:10.")
+    key.startsWith("::ffff:127.")
   );
 }
 

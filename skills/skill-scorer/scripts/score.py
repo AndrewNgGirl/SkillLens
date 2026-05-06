@@ -5,21 +5,29 @@ skill-scorer CLI —— MVP 版（仅规则分）
 用法:
     python scripts/score.py <path/to/SKILL.md>
     python scripts/score.py <path/to/skill_dir>
+    python scripts/score.py --agent-prompt <path/to/skill_dir> > agent-deep-review-prompt.md
+    python scripts/score.py --llm-results agent-llm-results.json <path/to/skill_dir>
 
 输出: JSON 格式评分报告到 stdout。
 依赖: PyYAML (pip install pyyaml)
 
-注意: LLM 评审在 Web 端启用；此 CLI 仅给出规则分骨架，供本地快速自测。
-     规则实现应与 web/lib/scoring/rules.ts 保持逻辑等价。
+注意: 默认模式仅给出规则分预览。agent-side Deep Review 使用 --agent-prompt
+     生成官方提示词，由 code agent 使用自己的模型套餐产出 JSON，再用 --llm-results
+     交回本 CLI 校验与聚合。规则实现应与 web/lib/scoring/rules.ts 保持逻辑等价。
 """
 from __future__ import annotations
 
+import argparse
+import contextlib
 import json
 import re
 import sys
+import tempfile
+import zipfile
+from hashlib import sha256
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 try:
     import yaml
@@ -29,6 +37,9 @@ except ImportError:
 
 
 RUBRIC_PATH = Path(__file__).parent.parent / "rubric" / "rubric.yaml"
+ENGINE_NAME = "skilllens-python-cli"
+ENGINE_VERSION = "0.2.0"
+VALUE_TYPES = {"productivity", "decision_support", "learning", "emotion_expression", "utility"}
 
 
 # --------- 解析 ---------
@@ -285,9 +296,12 @@ def check_transparency(c: dict) -> dict:
     return {"evidenceSource": "doc_check", "confidencePolicy": "high"}
 
 
-def score_skill(path: Path) -> dict:
-    rubric = yaml.safe_load(RUBRIC_PATH.read_text(encoding="utf-8"))
+def score_skill(path: Path, llm_payload: dict | None = None) -> dict:
+    rubric_text = RUBRIC_PATH.read_text(encoding="utf-8")
+    rubric = yaml.safe_load(rubric_text)
+    rubric_hash = sha256(rubric_text.encode("utf-8")).hexdigest()[:16]
     skill = parse_skill(path)
+    llm_results, llm_meta = normalize_llm_payload(llm_payload, rubric) if llm_payload else ({}, None)
     out_pillars = []
     total = 0.0
     llm_total = 0
@@ -315,17 +329,35 @@ def score_skill(path: Path) -> dict:
                     llm_total += 1
                 if c["type"] == "rule":
                     status, evidence = run_rule(c["id"], skill, rubric)
+                    ratio = STATUS_SCORE[status]
+                    fix = None
+                    confidence = None
                 else:
-                    status, evidence = "n_a", "LLM check (skipped in CLI MVP)"
+                    llm_result = llm_results.get(c["id"])
+                    if llm_result:
+                        status = llm_result["status"]
+                        evidence = llm_result["evidence"]
+                        ratio = llm_result["ratio"]
+                        fix = llm_result.get("fix")
+                        confidence = llm_result.get("confidence")
+                    else:
+                        status, evidence = "n_a", "LLM check (skipped in CLI)"
+                        ratio = None
+                        fix = None
+                        confidence = None
                 transparency = check_transparency(c)
-                checks_out.append({"id": c["id"], "type": c["type"], "status": status,
-                                   "evidence": evidence, "weight": c["weight"], **transparency})
-                if c["type"] == "llm" and status != "n_a":
+                check_out = {"id": c["id"], "type": c["type"], "status": status,
+                             "evidence": evidence, "weight": c["weight"], "ratio": ratio, **transparency}
+                if fix:
+                    check_out["fix"] = fix
+                if confidence is not None:
+                    check_out["confidence"] = confidence
+                checks_out.append(check_out)
+                if c["type"] == "llm" and ratio is not None:
                     llm_eval_in_pillar += 1
                     llm_evaluated += 1
-                s = STATUS_SCORE.get(status)
-                if s is not None:
-                    earned += s * c["weight"]
+                if ratio is not None:
+                    earned += ratio * c["weight"]
                     denom += c["weight"]
             dim_score = (earned / denom) * dim_weight if denom else 0.0
             pillar_score_internal += dim_score
@@ -345,17 +377,326 @@ def score_skill(path: Path) -> dict:
             "dimensions": out_dims,
         })
 
+    bonus_total = 0.0
+    bonus_out = []
+    for bonus in rubric.get("bonus", []):
+        earned = 0.0
+        denom = 0.0
+        checks_out = []
+        llm_in_bonus = 0
+        llm_eval_in_bonus = 0
+        for c in bonus.get("checks", []):
+            if c["type"] == "llm":
+                llm_in_bonus += 1
+                llm_total += 1
+            if c["type"] == "rule":
+                status, evidence = run_rule(c["id"], skill, rubric)
+                ratio = STATUS_SCORE[status]
+                fix = None
+                confidence = None
+            else:
+                llm_result = llm_results.get(c["id"])
+                if llm_result:
+                    status = llm_result["status"]
+                    evidence = llm_result["evidence"]
+                    ratio = llm_result["ratio"]
+                    fix = llm_result.get("fix")
+                    confidence = llm_result.get("confidence")
+                else:
+                    status, evidence = "n_a", "LLM check (skipped in CLI)"
+                    ratio = None
+                    fix = None
+                    confidence = None
+            transparency = check_transparency(c)
+            check_out = {"id": c["id"], "type": c["type"], "status": status,
+                         "evidence": evidence, "weight": c["weight"], "ratio": ratio, **transparency}
+            if fix:
+                check_out["fix"] = fix
+            if confidence is not None:
+                check_out["confidence"] = confidence
+            checks_out.append(check_out)
+            if c["type"] == "llm" and ratio is not None:
+                llm_eval_in_bonus += 1
+                llm_evaluated += 1
+            if ratio is not None:
+                earned += ratio * c["weight"]
+                denom += c["weight"]
+        bonus_score = (earned / denom) * bonus.get("max", 0) if denom else 0.0
+        bonus_total += bonus_score
+        bonus_out.append({
+            "id": bonus["id"],
+            "max": bonus.get("max", 0),
+            "score": round(bonus_score, 2),
+            "llmCoverage": {"evaluated": llm_eval_in_bonus, "total": llm_in_bonus},
+            "checks": checks_out,
+        })
+
     grade = next(g["grade"] for g in rubric["grades"] if total >= g["min"])
-    return {
+    llm_complete = llm_total == 0 or llm_evaluated == llm_total
+    report = {
+        "engine": ENGINE_NAME,
+        "engineVersion": ENGINE_VERSION,
+        "source": "official SkillLens CLI",
+        "mode": "agent-side deep review" if llm_payload else "rule-only preview",
+        "rubricSchemaVersion": rubric.get("schema_version"),
+        "rubricHash": rubric_hash,
         "spec": skill.spec,
         "language": skill.language,
         "score": round(total, 2),
         "grade": grade,
         "pillars": out_pillars,
-        "bonus": 0,
-        "llmComplete": llm_total == 0 or llm_evaluated == llm_total,
+        "bonus": round(bonus_total, 2),
+        "bonusChecks": bonus_out,
+        "llmComplete": llm_complete,
         "suggestions": _build_suggestions(out_pillars, rubric, skill.language),
     }
+    if llm_meta:
+        report["llmMeta"] = llm_meta
+    if llm_payload:
+        report["deepReviewCertificate"] = {
+            "status": "verified" if llm_complete else "incomplete",
+            "workflow": "agent-prompt -> agent-llm-results -> official-cli-merge",
+            "source": "official SkillLens CLI",
+            "engine": ENGINE_NAME,
+            "engineVersion": ENGINE_VERSION,
+            "rubricHash": rubric_hash,
+            "llmResultsHash": hash_json(llm_payload),
+            "llmComplete": llm_complete,
+        }
+    return report
+
+
+def normalize_llm_payload(payload: dict, rubric: dict) -> tuple[dict[str, dict], dict | None]:
+    if not isinstance(payload, dict):
+        raise ValueError("llm results must be a JSON object")
+    raw_results = payload.get("results")
+    if not isinstance(raw_results, dict):
+        raise ValueError("llm results JSON must contain object field: results")
+
+    expected = {c["id"] for c in iter_checks(rubric) if c["type"] == "llm"}
+    missing = sorted(expected - set(raw_results))
+    if missing:
+        raise ValueError(f"llm results missing {len(missing)} checks: {', '.join(missing[:8])}")
+
+    normalized: dict[str, dict] = {}
+    for check_id in sorted(expected):
+        raw = raw_results.get(check_id)
+        if not isinstance(raw, dict):
+            raise ValueError(f"llm result for {check_id} must be an object")
+        ratio = clamp01(raw.get("ratio"))
+        evidence = str(raw.get("evidence") or "").strip()[:400]
+        if not evidence:
+            raise ValueError(f"llm result for {check_id} missing evidence")
+        confidence_raw = raw.get("confidence")
+        confidence = clamp01(confidence_raw) if confidence_raw is not None else None
+        ratio = normalize_ratio(check_id, ratio, evidence, confidence)
+        out = {
+            "ratio": ratio,
+            "status": ratio_to_status(ratio),
+            "evidence": evidence,
+        }
+        fix = str(raw.get("fix") or "").strip()[:500]
+        if fix:
+            out["fix"] = fix
+        if confidence is not None:
+            out["confidence"] = confidence
+        normalized[check_id] = out
+
+    raw_meta = payload.get("meta")
+    meta = None
+    if isinstance(raw_meta, dict):
+        vt = str(raw_meta.get("value_type") or "").strip()
+        reason = str(raw_meta.get("value_type_reason") or "").strip()[:200]
+        meta = {}
+        if vt in VALUE_TYPES:
+            meta["value_type"] = vt
+        if reason:
+            meta["value_type_reason"] = reason
+        if not meta:
+            meta = None
+    return normalized, meta
+
+
+def hash_json(payload: Any) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def iter_checks(rubric: dict):
+    for pillar in rubric.get("pillars", []):
+        for dim in pillar.get("dimensions", []):
+            for check in dim.get("checks", []):
+                yield check
+    for bonus in rubric.get("bonus", []):
+        for check in bonus.get("checks", []):
+            yield check
+
+
+def clamp01(value: Any) -> float:
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if n != n:
+        return 0.0
+    return max(0.0, min(1.0, n))
+
+
+def ratio_to_status(ratio: float) -> str:
+    if ratio >= 0.85:
+        return "pass"
+    if ratio >= 0.4:
+        return "partial"
+    return "fail"
+
+
+def normalize_ratio(check_id: str, ratio: float, evidence: str, confidence: float | None = None) -> float:
+    calibrated = ratio
+    if check_id == "biz.target_users.specific":
+        lower = evidence.lower()
+        inferable = bool(re.search(r"可推断|推断出|inferable|inferred|can infer", evidence)) or "target users can be inferred" in lower
+        unclear = bool(re.search(r"不清晰|不明确|所有人|任何人|unclear|anyone|everyone", evidence))
+        if inferable and not unclear:
+            calibrated = max(calibrated, 0.85)
+
+    calibrated = min(calibrated, 0.96)
+    if confidence is not None:
+        if confidence < 0.5:
+            calibrated = min(calibrated, 0.72)
+        elif confidence < 0.65:
+            calibrated = min(calibrated, 0.82)
+        elif confidence < 0.8:
+            calibrated = min(calibrated, 0.9)
+    return round(calibrated, 2)
+
+
+def render_agent_prompt(path: Path) -> str:
+    rubric = yaml.safe_load(RUBRIC_PATH.read_text(encoding="utf-8"))
+    skill = parse_skill(path)
+    lang = skill.language
+    checks = [c for c in iter_checks(rubric) if c["type"] == "llm"]
+    checks_block = "\n".join(
+        f"- id: {c['id']}\n  criterion: {c['desc_zh'] if lang == 'zh' else c['desc_en']}"
+        for c in checks
+    )
+    meta_json = json.dumps(skill.meta, ensure_ascii=False, indent=2)
+    files_block = render_supporting_files(skill)
+    system = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
+    body_label = "被测 skill 所属规范" if lang == "zh" else "Target skill spec"
+    files_heading = "## 附属文件预览" if lang == "zh" else "## Supporting file previews"
+    checks_heading = "## 需要你评估的细则" if lang == "zh" else "## Checks to evaluate"
+    final_instruction = (
+        "请严格返回 JSON；不要输出 Markdown 代码块；不要解释。保存为 agent-llm-results.json 后运行官方 CLI 合并。"
+        if lang == "zh"
+        else "Return strict JSON only; no Markdown fences; no explanation. Save as agent-llm-results.json, then run the official CLI merge step."
+    )
+    return f"""{system}
+
+---
+
+{body_label}: {skill.spec}
+
+## frontmatter
+```yaml
+{meta_json}
+```
+
+## SKILL.md body
+```markdown
+{skill.body}
+```
+
+{files_heading}
+{files_block or "(none)"}
+
+{checks_heading}
+{checks_block}
+
+{final_instruction}
+"""
+
+
+def render_supporting_files(skill: CanonicalSkill) -> str:
+    if not skill.raw_path or not skill.raw_path.parent.exists() or not skill.raw_path.parent.is_dir():
+        return ""
+    root = skill.raw_path.parent
+    blocks = []
+    for rel in skill.files:
+        if rel == skill.raw_path.name or rel == "SKILL.md":
+            continue
+        if len(blocks) >= 20:
+            break
+        p = root / rel
+        if not p.is_file() or p.stat().st_size > 30_000:
+            continue
+        if not re.search(r"\.(md|txt|json|ya?ml|toml|py|js|ts|sh|schema)$|requirements\.txt$|package\.json$", rel, re.I):
+            continue
+        try:
+            preview = p.read_text(encoding="utf-8", errors="replace")[:4000]
+        except OSError:
+            continue
+        blocks.append(f"### {rel}\n{preview}")
+    return "\n\n".join(blocks)
+
+
+SYSTEM_PROMPT_ZH = """你是 SkillLens 的 agent-side Deep Review 评测员。你正在使用 code agent 自己的模型套餐执行评测，但评分标准必须完全遵守 SkillLens 官方 rubric。
+
+【第一步：判定 skill 的价值类型 value_type】
+在所有 check 之前，先把这个 skill 归到下面 5 类之一（必须选一类）：
+  • productivity        生产力工具型：替用户省时间/省钱/提效
+  • decision_support    决策辅助型：帮用户做更好的判断
+  • learning            学习成长型：帮用户增长知识或养成习惯
+  • emotion_expression  情绪表达型：提供情绪价值/共鸣/娱乐/社交话题
+  • utility             小工具型：解决一个具体小痛点
+
+【评分校准】
+- ratio 为 0~1 连续分；1.00 只给极少数标杆级案例，普通补齐章节不能满分。
+- 0.90~0.96 表示优秀但仍可微调；0.75~0.89 表示良好但不够锋利；0.50~0.74 表示方向对但证据不足；低于 0.50 表示缺失、空泛或不可信。
+- confidence 为你对该判断的置信度。依据不足时 confidence 必须低，低置信度高分会被官方 CLI 校准压低。
+- biz.target_users.specific 不要求显式写 ## Target users；能从场景、输入输出或 workflow 稳定推断具体用户时可高分。
+
+【硬性输出】
+只返回严格 JSON，禁止 Markdown 代码块、解释或额外文字：
+{
+  "meta": {
+    "value_type": "productivity | decision_support | learning | emotion_expression | utility",
+    "value_type_reason": "≤ 60 字一句话解释"
+  },
+  "results": {
+    "<check.id>": {"ratio": <0..1>, "evidence": "≤100字现状诊断", "fix": "≤120字具体改法", "confidence": <0..1>}
+  }
+}
+"""
+
+
+SYSTEM_PROMPT_EN = """You are SkillLens agent-side Deep Review evaluator. You are using the code agent's own model plan, but the standard MUST follow the official SkillLens rubric.
+
+[Step 1: Identify value_type]
+Before scoring checks, classify the skill into exactly one:
+  • productivity        — saves time / money / effort
+  • decision_support    — helps users make better judgments
+  • learning            — grows knowledge or habits
+  • emotion_expression  — emotional, entertainment, resonance, social value
+  • utility             — solves one small concrete pain
+
+[Score calibration]
+- ratio is continuous in [0, 1]. Reserve 1.00 for rare benchmark-level cases; normal "section added" compliance is not perfect.
+- 0.90-0.96 means excellent with minor room to sharpen; 0.75-0.89 good but not sharp; 0.50-0.74 directionally useful but under-evidenced; below 0.50 missing, vague, or not credible.
+- confidence is your confidence in this judgment. Insufficient evidence must have low confidence; the official CLI will calibrate high scores with low confidence downward.
+- biz.target_users.specific does not require an explicit ## Target users section; score high if concrete users are reliably inferable from scenario, inputs/outputs, or workflow.
+
+[Hard output]
+Return strict JSON only. No Markdown fences, explanations, or extra text:
+{
+  "meta": {
+    "value_type": "productivity | decision_support | learning | emotion_expression | utility",
+    "value_type_reason": "<= 40 words"
+  },
+  "results": {
+    "<check.id>": {"ratio": <0..1>, "evidence": "<=80 words diagnosis", "fix": "<=100 words concrete fix", "confidence": <0..1>}
+  }
+}
+"""
 
 
 def _build_suggestions(pillars: list[dict], rubric: dict, lang: str, top_n: int = 6) -> list[dict]:
@@ -403,9 +744,71 @@ def _build_suggestions(pillars: list[dict], rubric: dict, lang: str, top_n: int 
     return out
 
 
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Official SkillLens scorer. Default: rule-only preview; --agent-prompt/--llm-results enable agent-side Deep Review.",
+    )
+    parser.add_argument("path", type=Path, help="Path to SKILL.md, a skill directory, or a .zip package")
+    parser.add_argument(
+        "--agent-prompt",
+        action="store_true",
+        help="Emit the official prompt that a code agent should send to its own model for Deep Review.",
+    )
+    parser.add_argument(
+        "--llm-results",
+        type=Path,
+        help="Path to the strict JSON returned by the code agent's model; merges it into the official score.",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        with prepared_skill_path(args.path) as skill_path:
+            if args.agent_prompt:
+                if args.llm_results:
+                    parser.error("--agent-prompt cannot be combined with --llm-results")
+                print(render_agent_prompt(skill_path))
+                return 0
+
+            payload = None
+            if args.llm_results:
+                payload = json.loads(args.llm_results.read_text(encoding="utf-8"))
+            print(json.dumps(score_skill(skill_path, payload), ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        sys.stderr.write(f"skilllens error: {exc}\n")
+        return 1
+
+
+@contextlib.contextmanager
+def prepared_skill_path(path: Path) -> Iterator[Path]:
+    if path.suffix.lower() != ".zip":
+        yield path
+        return
+
+    with tempfile.TemporaryDirectory(prefix="skilllens-zip-") as tmp:
+        root = Path(tmp)
+        with zipfile.ZipFile(path) as zf:
+            for info in zf.infolist():
+                target = (root / info.filename).resolve()
+                if not str(target).startswith(str(root.resolve())):
+                    raise ValueError(f"unsafe zip entry: {info.filename}") from None
+            zf.extractall(root)
+        yield locate_extracted_skill(root)
+
+
+def locate_extracted_skill(root: Path) -> Path:
+    if (root / "SKILL.md").exists():
+        return root
+
+    top_dirs = [p for p in root.iterdir() if p.is_dir()]
+    if len(top_dirs) == 1 and (top_dirs[0] / "SKILL.md").exists():
+        return top_dirs[0]
+
+    matches = sorted(root.rglob("SKILL.md"))
+    if not matches:
+        raise FileNotFoundError("zip package does not contain SKILL.md")
+    return matches[0].parent
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        sys.stderr.write(__doc__ or "")
-        sys.exit(2)
-    p = Path(sys.argv[1])
-    print(json.dumps(score_skill(p), ensure_ascii=False, indent=2))
+    sys.exit(main(sys.argv[1:]))

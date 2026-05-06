@@ -42,7 +42,7 @@ export async function runLlmReview(
 
   const resp = await fetch("/api/llm", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: buildHeaders(),
     body: JSON.stringify(req),
     signal: opts.signal,
   });
@@ -82,4 +82,20 @@ export async function runLlmReview(
     });
   }
   return { response, results };
+}
+
+const ACCESS_TOKEN_STORAGE_KEY = "skilllens.llmAccessToken";
+
+export function saveLlmAccessToken(token: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+}
+
+function buildHeaders(): HeadersInit {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (typeof window === "undefined") return headers;
+
+  const token = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY)?.trim();
+  if (token) headers["x-skilllens-llm-token"] = token;
+  return headers;
 }

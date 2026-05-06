@@ -1,21 +1,41 @@
 ---
 name: skill-scorer
 description: Evaluates Agent Skills (Cursor / Claude / OpenClaw compatible) and produces a quantitative, rubric-based score with actionable improvement suggestions. Use when the user asks to review, rate, audit, grade, lint, or improve a SKILL.md file, a skill folder, or a skill archive, or says things like "给这个 skill 打分", "评估一下 skill 质量", "audit this skill", "rate my agent skill".
-version: 0.1.0
+version: 0.2.0
 license: MIT
 tags: [skill, quality, rubric, audit, meta]
 ---
 
 # skill-scorer
 
-一个"评测 Skill 的 Skill"。接收任意 Agent Skill 的源文件，依据 `rubric/rubric.yaml`
-给出 8 维度 100 分制评分、等级、证据引用与改进建议。同时兼容 **Cursor / Claude / OpenClaw** 三套规范。
+一个"评测 Skill 的 Skill"。接收任意 Agent Skill 的源文件，必须依据本仓库的官方评分入口和 `rubric/rubric.yaml`
+给出 5 大支柱、24 个子维度的 100 分制评分、等级、证据引用与改进建议。同时兼容 **Cursor / Claude / OpenClaw** 三套规范。
 
 ## When to use
 
 - 用户提供 `SKILL.md` / skill 文件夹 / `.zip` / GitHub URL，并请求评分、审计或改进建议。
 - 用户询问"我这个 skill 写得怎么样"、"怎么提升我的 skill 质量"、"帮我对齐官方最佳实践"。
 - **不适用于**：评价非 Skill 类文档（普通 README / 博客 / prompt 模板）。
+
+## Code Agent Quick Start
+
+如果你是 Cursor、WorkBuddy、Hermes、小龙虾或类似 code agent，先读 `USAGE.md`。
+
+规则分预览：
+
+```bash
+python3 skills/skill-scorer/scripts/score.py <path-to-skill-zip-dir-or-SKILL.md>
+```
+
+完整 agent-side Deep Review（使用 code agent 自己的模型套餐，不消耗 SkillLens 服务端 key）：
+
+```bash
+python3 skills/skill-scorer/scripts/score.py --agent-prompt <path-to-skill-zip-dir-or-SKILL.md> > agent-deep-review-prompt.md
+# 将 agent-deep-review-prompt.md 完整交给当前 code agent 的模型，保存严格 JSON 为 agent-llm-results.json
+python3 skills/skill-scorer/scripts/score.py --llm-results agent-llm-results.json <path-to-skill-zip-dir-or-SKILL.md>
+```
+
+不得临时生成自定义评分脚本替代官方 CLI；最终分数必须来自最后一步官方 CLI 输出。
 
 ## Inputs
 
@@ -42,12 +62,28 @@ tags: [skill, quality, rubric, audit, meta]
 
 ## Workflow
 
-1. **Detect spec**：读目录结构，判定属于 claude / openclaw 哪一种。
-2. **Normalize**：产出 `CanonicalSkill` 中间结构（`meta / sections / workflow / scripts[] / references[] / examples[] / language`）。
-3. **Rule scoring**：逐条评估 `rubric.yaml` 中 `type: rule` 的细则，给出 pass/partial/fail + 证据（行号）。
-4. **LLM scoring**（可选）：对 `type: llm` 的细则调用模型，返回 0–1 连续分数 + 简短理由。
-5. **Aggregate**：按权重加总，映射到 S/A/B/C/D 等级；计算 bonus。
-6. **Render**：按 skill 语言（zh / en）生成 Markdown / JSON 报告；附 Top-5 改进项。
+1. **Locate SkillLens root**：先定位包含 `skills/skill-scorer/rubric/rubric.yaml` 的 SkillLens 仓库根目录。
+2. **Run official scorer**：运行官方 CLI，不得临时生成替代评分脚本：
+
+   ```bash
+   python3 skills/skill-scorer/scripts/score.py <path-to-skill-zip-dir-or-SKILL.md>
+   ```
+
+3. **Agent-side Deep Review when requested**：如需完整深度评测，必须先运行 `--agent-prompt` 生成官方提示词，用当前 code agent 的模型返回严格 JSON，再运行 `--llm-results` 合并。
+4. **Use official JSON only**：总分、等级、pillar/dimension/check 分数必须来自官方 CLI 最终 JSON 输出，不能由 Agent 自己重算或补满。
+5. **Verify certificate**：完整 Deep Review 必须包含 `deepReviewCertificate.status="verified"`；没有证书只能称为规则分预览或非官方结果。
+6. **Render**：按 skill 语言（zh / en）把官方 JSON 渲染成 Markdown 报告；Top 改进项必须来自 JSON 的 `suggestions` 或对应 check 的 `fix_zh/fix_en`。
+
+## Official Tool Contract
+
+- **MUST** call `skills/skill-scorer/scripts/score.py` for local tool use, or call the deployed SkillLens Web/API endpoint when the user explicitly提供该服务地址。
+- **MUST** use the official `--agent-prompt` → model JSON → `--llm-results` flow for agent-side Deep Review.
+- **MUST NOT** paste or synthesize a new `python3 <<'PYEOF' ...` scoring script to replace the official scorer.
+- **MUST NOT** claim "全面检测"、"Deep Review 完成"、"43 项全部通过" 或 "100/100" unless those exact values appear in official SkillLens output.
+- **MUST NOT** call a result official full Deep Review unless `deepReviewCertificate.status` is exactly `verified`.
+- **MUST** preserve `llmComplete=false` / `llmCoverage` in the rendered report. If LLM checks are skipped, say so clearly.
+- **MUST** include the scoring source in every report, for example: `source: official SkillLens CLI` or `source: SkillLens Web Deep Review`.
+- **MUST** treat `rubric/rubric.yaml` as read-only scoring data. Do not alter weights, thresholds, or pass/partial/fail mapping during evaluation.
 
 ## Guardrails
 
@@ -55,104 +91,37 @@ tags: [skill, quality, rubric, audit, meta]
 - LLM 评审仅用于 `type: llm` 的细则，**不得覆盖或改写**规则分结果。
 - 报告语言始终跟随被测 skill 的主语言，除非用户在 Web 端手动切换。
 - 不在报告中回显原 skill 中可能的密钥/凭证字符串。
+- 如果无法运行官方 CLI 或访问官方 Web/API，必须停止并说明原因；不得退回到自制评分器。
 
 ## Files
 
 - `rubric/rubric.yaml` — 评分细则（**Web 端与 CLI 共用的单一事实源**）
-- `scripts/score.py` — CLI 打分脚本（规则分，MVP）
+- `scripts/score.py` — 官方本地 CLI 打分脚本（规则分预览；不会伪造 LLM Deep Review）
+- `USAGE.md` — 给 Cursor / WorkBuddy / Hermes / 小龙虾等 code agent 的官方调用契约
 - `references/best-practices.md` — Skill 写作最佳实践（供 LLM few-shot 与人类阅读）
 
-# SkillLens Report — Claude / S
+## Report Rendering Rules
 
-**Total**: 91.63 / 100  ·  **Bonus**: +4.55
+Render the official JSON into a concise report. Do not use a fixed sample score. Use this shape:
 
-## 选题价值 — 21.6 / 25
-### 目标用户清晰度 (4.8/5)
-- `biz.target_users.specific` [pass] 明确列出了三类用户：开源维护者、小团队、独立开发者，并给出了频率估算。
-### 用户需求真实度 (5.4/6)
-- `biz.problem_reality.is_real` [pass] PR 审查耗时是真实痛点，作者量化了节省时间（25分钟/PR），且聚焦于风格审查而非已有工具覆盖的 bug/安全。
-### 价值主张清晰度 (4.5/5)
-- `biz.value_articulation.matched_to_type` [pass] 按 productivity 标准，量化了时间节省（4小时/周），并清晰对比了 Copilot Code Review 和 CodeQL。
-### 复用价值 (4.5/5)
-- `biz.usage_frequency.estimable` [pass] 明确说明 per-PR 高频使用，并给出了活跃仓库的每日频率。
-### 沉淀 / 记忆点潜力 (2.4/4)
-- `biz.moat_potential.compounding` [partial] 团队规则可积累，但未强调规则库的持续优化或社区共享机制。
+```markdown
+# SkillLens Report
 
-## 市场竞争力 — 12.8 / 15
-### 差异化 (4.5/5)
-- `market.differentiation.clear` [pass] 一句话说清：聚焦团队风格和结构约定，而非 bug/安全。
-### 聚焦度 (3.6/4)
-- `market.scope_focus.disciplined` [pass] 明确声明不适用于 bug 查找和安全扫描，专注风格审查。
-### 通用模型可替代风险 (2.5/3)
-- `market.llm_replaceable.has_edge` [pass] 结合了静态 lint 工具和团队规则文件，纯 LLM 无法获取团队特定规则。
-### 竞品调研意识 (2.1/3)
-- `market.existing_alternatives.surveyed` [partial] 作者提到了 Copilot Code Review 和 CodeQL，但客观调研显示 reviewdog 系列（9264 stars）是强相关竞品，未被提及。
+source: official SkillLens CLI | SkillLens Web Deep Review
+mode: rule-only preview | full deep review
+llmComplete: true | false
 
-## 运行成本 — 14.7 / 15
-### 上下文预算 (4.0/4)
-- `cost.context_budget.skill_md_size` [pass] 5274 chars（约 1758 tokens）
-### 分层加载 (4.0/4)
-- `cost.reference_layering.has_dirs` [pass] 已检测到 references/ scripts/ assets/ 等分层目录
-### 外部依赖重量 (3.8/4)
-- `cost.external_dependencies.declared` [pass] 已同时提供依赖清单和 Dependencies 说明
-- `cost.external_dependencies.weight_assessed` [pass] 依赖少且免费（GitHub API、lint 工具），LLM 调用成本低（$0.005/PR）。
-### 可缓存性 (2.9/3)
-- `cost.cache_friendliness.idempotent_inputs` [pass] 定义了缓存键（SHA-256 of pr_url, head_sha, team_rules_hash），明确复用条件。
+**Total**: <score from JSON> / 100 · **Grade**: <grade from JSON>
 
-## 效果稳定性 — 18.4 / 20
-### 任务模型匹配度 (4.5/5)
-- `rel.task_model_fit.in_zone` [pass] 任务为结构化提取和风格评论，属于 LLM 稳定能力区。
-### 脚本兜底 (4.0/4)
-- `rel.script_fallback.has_scripts` [pass] 已找到 scripts/ 目录
-### 输出校验 (3.9/4)
-- `rel.output_validation.declared` [pass] 已找到 Outputs 章节和 schema / typed declaration
-- `rel.output_validation.enforced` [pass] 有 validate_review.py 脚本和 schema.json，失败时重试一次后降级。
-### 幂等性 (2.7/3)
-- `rel.idempotency.discussed` [pass] 讨论了温度 0.2 和去重机制，说明同输入输出近似一致。
-### 异常路径 (1.9/2)
-- `rel.failure_path.explicit` [pass] 详细列出了 API 403/404、linter 缺失、schema 验证失败、限流等场景的处理。
-### 边界情况 (1.4/2)
-- `rel.edge_cases.discussed` [partial] 未明确讨论边界场景，如空 diff、超大 PR、非支持语言等。
+## Pillars
+| Pillar | Score | LLM coverage |
+|---|---:|---:|
+| <pillar.name_zh/name_en> | <pillar.score>/<pillar.weight> | <evaluated>/<total> |
 
-## 书写规范性 — 24.3 / 25
-### 元数据规范性 (4.0/4)
-- `meta.frontmatter_valid` [pass] frontmatter 可正常解析
-- `meta.required_fields` [pass] 必填字段齐全：name, description
-- `meta.recommended_fields` [pass] 推荐字段齐全：license, version
-- `meta.name_format` [pass] name="pr-reviewer"
-### 可发现性 (4.7/5)
-- `disc.length_ok` [pass] 276 chars (<= 1024)
-- `disc.has_trigger_cue` [pass] 已找到触发线索
-- `disc.third_person` [pass] 已使用第三人称表达
-- `disc.keyword_coverage` [pass] 覆盖了 review/audit/comment/评审/审查 等中英文关键词，但缺少 'code review' 等常见短语。
-### 结构与可读性 (3.0/3)
-- `struct.has_headings` [pass] 共有 13 个 H2 章节
-- `struct.has_workflow` [pass] 已找到 Workflow / steps 章节
-- `struct.md_well_formed` [pass] 4 个代码块围栏，已成对闭合
-### 可执行性 (5.7/6)
-- `act.steps_atomic` [pass] 工作流步骤清晰，每步只做一件事（fetch、lint、LLM、compose、validate）。
-- `act.io_explicit` [pass] 输入输出表格完整，包含类型、必需性、默认值。
-- `act.tool_calls_clear` [pass] 已有可复制的代码块
-- `act.no_ambiguity` [pass] 步骤描述明确，无模糊词汇。
-- `act.has_examples` [pass] 已找到示例/用法内容
-### 安全合规 (2.9/3)
-- `safe.dangerous_ops_flagged` [pass] 未检测到破坏性操作
-- `safe.secrets_policy` [pass] 未检测到明文密钥
-- `safe.least_privilege` [pass] 仅需 GitHub API 读权限和本地 lint 工具，无多余权限。
-- `safe.privacy` [pass] 明确说明 diff 发送给 LLM 提供商，并提示检查数据保留政策，引用 privacy.md。
-### 可维护性 (4.0/4)
-- `maint.has_version` [pass] version="0.3.0"
-- `maint.declares_deps` [pass] 已找到依赖清单文件
-- `maint.has_tests` [pass] 已找到测试文件
-- `maint.has_changelog` [pass] 已找到 changelog / 更新记录
+## Top Improvements
+1. <suggestion.title from JSON>
+   - 现状/Why: <suggestion.why>
+   - 改法/How: <suggestion.how>
+```
 
-## Top improvements
-1. **是否具备持续使用后的沉淀、记忆点或传播性** _(medium, business_value/biz.moat_potential.compounding)_
-   - 现状: 团队规则可积累，但未强调规则库的持续优化或社区共享机制。
-   - 改法: 建议增加规则库版本管理或用户贡献规则的功能。
-2. **是否主动调研并说明真实同类项目与差异点** _(medium, market/market.existing_alternatives.surveyed)_
-   - 现状: 作者提到了 Copilot Code Review 和 CodeQL，但客观调研显示 reviewdog 系列（9264 stars）是强相关竞品，未被提及。
-   - 改法: 建议补充 reviewdog 的对比，说明差异化。
-3. **讨论了 2–3 个边界场景或已知缺陷** _(medium, reliability/rel.edge_cases.discussed)_
-   - 现状: 未明确讨论边界场景，如空 diff、超大 PR、非支持语言等。
-   - 改法: 建议补充空 diff 处理、语言不支持时的降级策略。
+If the CLI output says `llmComplete=false`, explicitly call the result a rule-only preview. Never upgrade it to a full deep review.

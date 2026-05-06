@@ -63,10 +63,23 @@ npm run dev
 
 If no model key is configured, SkillLens falls back to mock scores so the UI can still be previewed.
 
+## Code Agent / CLI Usage
+
+This README is only for the Web app. For Cursor, WorkBuddy, Hermes, or other code-agent workflows, use the official agent contract in `../skills/skill-scorer/USAGE.md`.
+
+For a public deployment, keep the browser-origin guard enabled so visitors cannot spend your model key by calling `/api/llm` directly from tools:
+
+```env
+LLM_REQUIRE_BROWSER_REQUEST=1
+```
+
+With this setting, users can still click Deep Review in the web UI without entering a token. `/api/llm` only accepts same-origin browser requests from the SkillLens page. If you also need private server-to-server access, set `LLM_ACCESS_TOKEN` and pass it in `x-skilllens-llm-token` or `Authorization: Bearer ...`.
+
 ### Security Notes
 
 - Do not commit `.env.local`, `.env`, or any real API key.
 - Do not put secrets in `NEXT_PUBLIC_*` variables. Those are bundled into client-side JavaScript.
+- Keep `LLM_REQUIRE_BROWSER_REQUEST=1` before exposing a server that has `DEEPSEEK_API_KEY` or `ANTHROPIC_API_KEY`.
 - Use `web/.env.example` for documentation only; keep real values in your local machine or deployment platform secrets.
 - If a real key was ever committed, pasted into an issue, shared in a screenshot, or included in logs, rotate it in the provider dashboard before publishing.
 
@@ -78,6 +91,8 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 LLM_THINKING_MODE=disabled
 LLM_TIMEOUT_MS=180000
 DAILY_SCORE_LIMIT=20
+LLM_REQUIRE_BROWSER_REQUEST=1
+LLM_ACCESS_TOKEN=
 GITHUB_TOKEN=
 MARKET_CACHE_TTL_MS=1800000
 ```

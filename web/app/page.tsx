@@ -25,6 +25,7 @@ type LlmErrorReason =
   | "provider_timeout"
   | "provider_network"
   | "rate_limited"
+  | "llm_browser_required"
   | "llm_failed"
   | "unknown";
 

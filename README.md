@@ -67,6 +67,19 @@ SkillLens 可以评测：
 
 仓库内置了一个示例 skill：`skills/skill-scorer/examples/pr-reviewer`。它是一个 PR 评审 skill，用来展示结构良好的 skill 应该长什么样。
 
+## 两种使用入口
+
+SkillLens 现在分成两条清晰路径：
+
+- **Web UI**：给人使用。上传 `SKILL.md`、skill 文件夹或 `.zip`，在浏览器里生成报告。详见 `web/README.md`。
+- **Agent CLI**：给 Cursor、WorkBuddy、Hermes、小龙虾等 code agent 使用。通过官方 CLI 和证书机制完成 agent-side Deep Review。详见 `skills/skill-scorer/USAGE.md`。
+
+## Agent CLI
+
+Cursor、WorkBuddy、Hermes、小龙虾等 code agent 可以把 SkillLens 当作本地官方工具调用。Agent CLI 支持 `.zip` / 目录 / `SKILL.md`，完整 agent-side Deep Review 使用 code agent 自己的模型套餐，不消耗 SkillLens 服务端 key。
+
+详细命令、三步工作流、证书验真和可复制给 code agent 的提示词，都集中在 `skills/skill-scorer/USAGE.md`。
+
 ## 输出结果
 
 SkillLens 会生成：
@@ -100,6 +113,14 @@ npm run dev
 DEEPSEEK_API_KEY=
 ANTHROPIC_API_KEY=
 ```
+
+如果部署到公网，建议开启浏览器同源保护，避免陌生用户或工具直接调用 `/api/llm` 消耗你的模型额度：
+
+```env
+LLM_REQUIRE_BROWSER_REQUEST=1
+```
+
+设置后，正常网页按钮无需输入令牌；接口只接受来自 SkillLens 页面发起的同源浏览器请求。若你还需要私有的服务端到服务端调用，可以额外设置 `LLM_ACCESS_TOKEN`，并在请求里携带 `x-skilllens-llm-token` 或 `Authorization: Bearer ...`。
 
 真实 key 必须只保存在 `.env.local` 或部署平台的 Secret Manager 中，不要提交到 GitHub。
 
@@ -140,6 +161,7 @@ npm run build
 
 - 不要提交 `.env.local`、`.env` 或任何真实 API Key。
 - 不要通过 `NEXT_PUBLIC_*` 环境变量暴露密钥。
+- 公网部署且服务端有模型 key 时，请保持 `LLM_REQUIRE_BROWSER_REQUEST=1`。
 - 如果某个 key 曾经被提交、贴到 issue、出现在截图或日志中，请立即在服务商后台轮换。
 - 发布前建议做一次密钥扫描，例如运行 `gitleaks detect --source .`。
 

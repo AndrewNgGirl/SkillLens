@@ -67,6 +67,19 @@ SkillLens can evaluate:
 
 The included demo skill is `skills/skill-scorer/examples/pr-reviewer`, a PR review skill used to demonstrate what a strong, well-structured skill looks like.
 
+## Two Usage Paths
+
+SkillLens now has two clear entry points:
+
+- **Web UI**: for humans. Upload `SKILL.md`, a skill folder, or a `.zip`, then review the report in the browser. See `web/README.md`.
+- **Agent CLI**: for Cursor, WorkBuddy, Hermes, and similar code agents. Use the official CLI and certificate workflow for agent-side Deep Review. See `skills/skill-scorer/USAGE.md`.
+
+## Agent CLI
+
+Code agents such as Cursor, WorkBuddy, Hermes, and similar tools can call SkillLens as an official local tool. The Agent CLI accepts `.zip` / directories / `SKILL.md`; full agent-side Deep Review uses the code agent's own model plan and does not spend your SkillLens server API key.
+
+Detailed commands, the three-step workflow, certificate verification, and the copy-paste prompt for code agents all live in `skills/skill-scorer/USAGE.md`.
+
 ## Output
 
 SkillLens produces:
@@ -102,6 +115,14 @@ ANTHROPIC_API_KEY=
 ```
 
 Real keys must stay in `.env.local` or your deployment platform's secret manager. Do not commit them.
+
+For public deployments, keep the browser-origin guard enabled so tools cannot directly spend your model quota through `/api/llm`:
+
+```env
+LLM_REQUIRE_BROWSER_REQUEST=1
+```
+
+With this setting, normal web users can still click Deep Review without entering a token. The API only accepts same-origin browser requests from the SkillLens page. If you also need private server-to-server access, set `LLM_ACCESS_TOKEN` and pass it in `x-skilllens-llm-token` or `Authorization: Bearer ...`.
 
 ## Repository Structure
 
@@ -140,6 +161,7 @@ More setup details are in `web/README.md`.
 
 - Never commit `.env.local`, `.env`, or real API keys.
 - Do not expose secrets through `NEXT_PUBLIC_*` variables.
+- Keep `LLM_REQUIRE_BROWSER_REQUEST=1` before exposing a server with `DEEPSEEK_API_KEY` or `ANTHROPIC_API_KEY`.
 - Rotate any key that was ever committed, pasted into an issue, shared in a screenshot, or included in logs.
 - Run a secret scan before publishing, for example with `gitleaks detect --source .`.
 

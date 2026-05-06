@@ -5,7 +5,7 @@
  *
  * - 自托管 Key：env.ANTHROPIC_API_KEY / env.DEEPSEEK_API_KEY
  * - 未配置 Key 时走 mock（全 0.5），前端显示 provider=mock
- * - IP 限流 + 内容 hash 缓存
+ * - 浏览器同源保护 + 可选访问令牌 + IP 限流 + 内容 hash 缓存
  */
 import type { NextRequest } from "next/server";
 import { runLlm } from "@/lib/llm/provider";
@@ -17,8 +17,21 @@ export const runtime = "nodejs";
 export const maxDuration = 45; // seconds (for Vercel)
 
 const MAX_BODY_CHARS = Number(process.env.MAX_INPUT_CHARS ?? 50000);
+const ACCESS_TOKEN = process.env.LLM_ACCESS_TOKEN?.trim();
+const REQUIRE_BROWSER_REQUEST = process.env.LLM_REQUIRE_BROWSER_REQUEST !== "0";
 
 export async function POST(req: NextRequest) {
+  const hasTokenAccess = ACCESS_TOKEN ? hasValidAccessToken(req, ACCESS_TOKEN) : false;
+  if (!hasTokenAccess && hasProviderKey() && REQUIRE_BROWSER_REQUEST && !isLikelyBrowserSameOrigin(req)) {
+    return json(
+      {
+        error: "llm_browser_required",
+        detail: "Deep review must be started from the SkillLens web page.",
+      },
+      403,
+    );
+  }
+
   let body: LlmReviewRequest;
   try {
     body = (await req.json()) as LlmReviewRequest;
@@ -85,4 +98,27 @@ function json(payload: unknown, status = 200, headers: Record<string, string> = 
     status,
     headers: { "content-type": "application/json; charset=utf-8", ...headers },
   });
+}
+
+function hasValidAccessToken(req: NextRequest, expected: string): boolean {
+  const headerToken = req.headers.get("x-skilllens-llm-token")?.trim();
+  const auth = req.headers.get("authorization")?.trim();
+  const bearerToken = auth?.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : undefined;
+  return headerToken === expected || bearerToken === expected;
+}
+
+function hasProviderKey(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.DEEPSEEK_API_KEY);
+}
+
+function isLikelyBrowserSameOrigin(req: NextRequest): boolean {
+  const expectedOrigin = new URL(req.url).origin;
+  const origin = req.headers.get("origin");
+  if (origin) return origin === expectedOrigin;
+
+  const referer = req.headers.get("referer");
+  if (referer?.startsWith(`${expectedOrigin}/`)) return true;
+
+  const secFetchSite = req.headers.get("sec-fetch-site");
+  return secFetchSite === "same-origin" || secFetchSite === "same-site";
 }
