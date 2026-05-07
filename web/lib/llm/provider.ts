@@ -24,6 +24,7 @@ const DEFAULT_ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-
  * 想换 V4-pro（更准但更贵）：在 .env.local 设 DEEPSEEK_MODEL=deepseek-v4-pro
  */
 const DEFAULT_DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+const DEFAULT_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS || 8192);
 
 /**
  * V4 默认开启 thinking 模式（更聪明但更慢更贵）。
@@ -63,19 +64,29 @@ export async function runLlm(req: LlmReviewRequest): Promise<LlmReviewResponse> 
   }
 
   const parsed = parseModelJson(result.raw);
+  const missingIds = req.checks
+    .filter((c) => typeof parsed?.results?.[c.id]?.ratio !== "number")
+    .map((c) => c.id);
+  if (!parsed?.results || missingIds.length > 0) {
+    throw new Error(
+      `incomplete_model_output: missing ${missingIds.length}/${req.checks.length} checks: ${missingIds.slice(0, 8).join(", ")}`,
+    );
+  }
+
   const results: Record<string, LlmCheckResult> = {};
   for (const c of req.checks) {
     const raw = parsed?.results?.[c.id];
     if (raw && typeof raw.ratio === "number") {
       const evidence = String(raw.evidence ?? "").slice(0, 400);
-      const r = normalizeRatio(c.id, clamp01(raw.ratio), evidence);
+      const confidence = typeof raw.confidence === "number" ? clamp01(raw.confidence) : undefined;
+      const r = normalizeRatio(c.id, clamp01(raw.ratio), evidence, confidence);
       results[c.id] = {
         id: c.id,
         ratio: r,
         status: ratioToStatus(r),
         evidence,
         fix: raw.fix ? String(raw.fix).slice(0, 500) : undefined,
-        confidence: typeof raw.confidence === "number" ? clamp01(raw.confidence) : undefined,
+        confidence,
       };
     } else {
       results[c.id] = {
@@ -119,7 +130,7 @@ async function callAnthropic(system: string, user: string): Promise<ProviderResu
     },
     body: JSON.stringify({
       model: DEFAULT_ANTHROPIC_MODEL,
-      max_tokens: 4096,
+      max_tokens: DEFAULT_MAX_TOKENS,
       system,
       messages: [{ role: "user", content: user }],
     }),
@@ -166,7 +177,7 @@ async function callDeepseek(system: string, user: string): Promise<ProviderResul
         ],
         response_format: { type: "json_object" },
         temperature: 0.2,
-        max_tokens: 2048,
+        max_tokens: DEFAULT_MAX_TOKENS,
         // V4 专属字段，旧模型会忽略；默认 disabled 走最快/最便宜路径
         thinking: { type: DEEPSEEK_THINKING_MODE },
       }),
@@ -231,14 +242,28 @@ function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
-function normalizeRatio(checkId: string, ratio: number, evidence: string): number {
+function normalizeRatio(checkId: string, ratio: number, evidence: string, confidence?: number): number {
+  let calibrated = ratio;
+
   // 产品规则：目标用户不必显式写 ## Target users；只要能从场景/输入输出稳定推断，就应视为清晰。
   // 某些模型会因为“未显式写出团队规模/角色”保守给 partial，这里做一个窄范围校正。
   if (checkId === "biz.target_users.specific") {
     const lower = evidence.toLowerCase();
     const inferable = /可推断|推断出|inferable|inferred|can infer/.test(evidence) || lower.includes("target users can be inferred");
     const unclear = /不清晰|不明确|所有人|任何人|unclear|anyone|everyone/.test(evidence);
-    if (inferable && !unclear) return Math.max(ratio, 0.85);
+    if (inferable && !unclear) calibrated = Math.max(calibrated, 0.85);
   }
-  return ratio;
+
+  // LLM 是主观评审者，不应轻易制造 100 分。1.0 保留给人工复核意义上的标杆级案例。
+  // 这里做软上限：优秀仍可拿 0.96，但“满足要求”不会自动等于满分。
+  calibrated = Math.min(calibrated, 0.96);
+
+  // 置信度低时，说明模型自己也认为证据不足；这类判断不能支撑高分。
+  if (confidence !== undefined) {
+    if (confidence < 0.5) calibrated = Math.min(calibrated, 0.72);
+    else if (confidence < 0.65) calibrated = Math.min(calibrated, 0.82);
+    else if (confidence < 0.8) calibrated = Math.min(calibrated, 0.9);
+  }
+
+  return Math.round(calibrated * 100) / 100;
 }

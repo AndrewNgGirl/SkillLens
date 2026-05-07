@@ -8,9 +8,11 @@ import type { LlmReviewRequest, LlmReviewResponse } from "./types";
 
 const MAX_ENTRIES = 512;
 const MEM = new Map<string, LlmReviewResponse>();
+const CACHE_VERSION = "llm-calibration-v2";
 
 export function hashRequest(req: LlmReviewRequest): string {
   const shape = {
+    version: CACHE_VERSION,
     lang: req.lang,
     spec: req.spec,
     skillBody: req.skillBody,
