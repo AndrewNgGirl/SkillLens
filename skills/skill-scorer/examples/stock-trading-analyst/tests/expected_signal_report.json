@@ -1,0 +1,50 @@
+{
+  "market_date": "2026-05-07",
+  "scenario": "watchlist",
+  "summary": "AI应用与金融科技资金回流更清晰，机器人方向波动更大，适合放入观察池而非直接交易。",
+  "risk_disclaimer": "This is decision support, not personalized investment advice.",
+  "theme_rankings": [
+    {
+      "theme": "AI应用",
+      "score": 82,
+      "evidence": ["资金净流入较高", "同属金融科技催化", "换手与量比支持活跃度"],
+      "risks": ["题材持续性仍需次日确认", "短线情绪退潮时容易回撤"],
+      "confidence": 0.78
+    },
+    {
+      "theme": "机器人",
+      "score": 63,
+      "evidence": ["涨停但换手过高", "量比显著放大"],
+      "risks": ["封单不稳定", "新闻证据不足"],
+      "confidence": 0.58
+    }
+  ],
+  "watchlist": [
+    {
+      "code": "000001",
+      "name": "示例股份A",
+      "role": "观察池候选",
+      "signal_score": 76,
+      "risk_level": "medium",
+      "evidence": ["换手率 18.5%", "量比 2.6", "资金净流入 1.25 亿"],
+      "invalidations": ["题材资金连续两日流出", "跌破关键支撑且放量"],
+      "human_review_required": true
+    },
+    {
+      "code": "000002",
+      "name": "示例股份B",
+      "role": "高波动观察",
+      "signal_score": 58,
+      "risk_level": "high",
+      "evidence": ["涨停", "量比 4.8"],
+      "invalidations": ["封单继续转弱", "无公开催化补充"],
+      "human_review_required": true
+    }
+  ],
+  "data_quality": {
+    "freshness": "same_session",
+    "source_count": 2,
+    "missing_fields": [],
+    "confidence": 0.8
+  }
+}

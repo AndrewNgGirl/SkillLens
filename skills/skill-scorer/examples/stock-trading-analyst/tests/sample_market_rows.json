@@ -1,0 +1,34 @@
+{
+  "market_date": "2026-05-07",
+  "universe": "a_share",
+  "scenario": "watchlist",
+  "risk_profile": "balanced",
+  "rows": [
+    {
+      "code": "000001",
+      "name": "示例股份A",
+      "concepts": ["AI应用", "金融科技"],
+      "price_change_pct": 7.2,
+      "turnover_rate": 18.5,
+      "volume_ratio": 2.6,
+      "net_inflow_cny": 125000000,
+      "limit_up_reason": "AI应用催化，金融科技资金回流",
+      "news": ["https://example.com/public-news-a"],
+      "data_source": "user_upload",
+      "timestamp": "2026-05-07T15:10:00+08:00"
+    },
+    {
+      "code": "000002",
+      "name": "示例股份B",
+      "concepts": ["机器人", "高端制造"],
+      "price_change_pct": 10.0,
+      "turnover_rate": 32.1,
+      "volume_ratio": 4.8,
+      "net_inflow_cny": 62000000,
+      "limit_up_reason": "题材轮动，封单不稳定",
+      "news": [],
+      "data_source": "user_upload",
+      "timestamp": "2026-05-07T14:55:00+08:00"
+    }
+  ]
+}

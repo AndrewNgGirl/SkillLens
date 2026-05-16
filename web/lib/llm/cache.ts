@@ -8,7 +8,7 @@ import type { LlmReviewRequest, LlmReviewResponse } from "./types";
 
 const MAX_ENTRIES = 512;
 const MEM = new Map<string, LlmReviewResponse>();
-const CACHE_VERSION = "llm-calibration-v2";
+const CACHE_VERSION = "llm-calibration-v5-finance-scenario-depth";
 
 export function hashRequest(req: LlmReviewRequest): string {
   const shape = {
@@ -18,6 +18,13 @@ export function hashRequest(req: LlmReviewRequest): string {
     skillBody: req.skillBody,
     meta: req.meta,
     checks: req.checks.map((c) => c.id).sort(),
+    expertReview: req.expertReview
+      ? {
+          domain: req.expertReview.domain,
+          scenario: req.expertReview.scenario,
+          schemaVersion: req.expertReview.schemaVersion,
+        }
+      : null,
     // v3.2: marketSurvey 影响 LLM 评分，必须计入 hash 否则换了 survey 还命中旧缓存
     marketKey: req.marketSurvey
       ? `${req.marketSurvey.query}::${req.marketSurvey.repos.map((r) => r.full_name).sort().join(",")}`

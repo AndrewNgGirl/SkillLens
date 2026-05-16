@@ -191,6 +191,52 @@ export function runRuleCheck(
       return { status: "fail", evidence: "缺少 Outputs 章节和 schema" };
     }
 
+    // ---- reliability → pipeline-only sub-skill self-containment ----
+    // Mirrors score.py:run_rule for rel.pipeline_subskill_quality.self_contained.
+    // Only emitted for pipeline skills (applies_to=[pipeline]) — otherwise the
+    // case is short-circuited upstream by check_applies and never reaches here.
+    case "rel.pipeline_subskill_quality.self_contained": {
+      const subSkillFiles = files.filter(
+        (f) => f.path !== skill.entryFile && /(^|\/)SKILL\.md$/i.test(f.path),
+      );
+      if (subSkillFiles.length === 0) {
+        return { status: "n_a", evidence: "未发现子 SKILL.md（applies_to 应阻断到此）" };
+      }
+      const headRe = /^#{1,6}\s+(.+)$/gm;
+      const whenRe = /when to use|trigger|何时使用|触发|适用/i;
+      const flowRe = /workflow|steps?|流程|步骤|how it works/i;
+      const weak: string[] = [];
+      for (const f of subSkillFiles) {
+        const text = f.preview ?? "";
+        const heads: string[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = headRe.exec(text)) !== null) heads.push(m[1].trim());
+        const headBlob = heads.join(" | ");
+        const hasWhen = whenRe.test(headBlob) || whenRe.test(text.slice(0, 400));
+        const hasFlow = flowRe.test(headBlob);
+        if (!(hasWhen && hasFlow)) {
+          const missing: string[] = [];
+          if (!hasWhen) missing.push("when-to-use");
+          if (!hasFlow) missing.push("workflow");
+          weak.push(`${f.path} (missing ${missing.join(",")})`);
+        }
+      }
+      const total = subSkillFiles.length;
+      const ok = total - weak.length;
+      if (weak.length === 0) {
+        return { status: "pass", evidence: `${total} 个子 SKILL.md 都有 when-to-use + workflow 章节` };
+      }
+      const sample = weak.slice(0, 3).join("; ") + (weak.length > 3 ? `; +${weak.length - 3} more` : "");
+      if (ok === 0) {
+        return { status: "fail", evidence: `0/${total} 子 skill 自洽；如 ${weak[0]}` };
+      }
+      const ratio = ok / total;
+      return {
+        status: ratio >= 0.6 ? "partial" : "fail",
+        evidence: `${ok}/${total} 子 skill 自洽；薄弱：${sample}`,
+      };
+    }
+
     // ---- bonus ----
     case "port.spec_agnostic_frontmatter": {
       const known = new Set(["name", "description", "version", "license", "tags", "author"]);

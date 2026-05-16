@@ -129,10 +129,16 @@ export function renderPrompt(req: LlmReviewRequest): RenderedPrompt {
   const metaJson = JSON.stringify(req.meta, null, 2);
 
   const marketBlock = req.marketSurvey ? renderMarketSurvey(req.marketSurvey, req.lang) : "";
+  const expertBlock = req.expertReview ? renderExpertReviewBlock(req.expertReview, req.lang) : "";
+  const skillTypeBlock = req.skillContext ? renderSkillTypeBlock(req.skillContext, req.lang) : "";
+  const outputLang = req.outputLang ?? req.lang;
+  const languageBlock = renderLanguageBlock(outputLang);
 
   const user = req.lang === "zh"
     ? `被测 skill 所属规范: ${req.spec}
 
+${skillTypeBlock}
+${languageBlock}
 ## frontmatter
 \`\`\`yaml
 ${metaJson}
@@ -145,6 +151,7 @@ ${req.skillBody}
 
 ${filesBlock ? `## 附属文件预览\n${filesBlock}\n` : ""}
 ${marketBlock}
+${expertBlock}
 ## 需要你评估的细则
 ${checksBlock}
 
@@ -155,6 +162,8 @@ ${checksBlock}
 }`
     : `Target skill spec: ${req.spec}
 
+${skillTypeBlock}
+${languageBlock}
 ## frontmatter
 \`\`\`yaml
 ${metaJson}
@@ -167,6 +176,7 @@ ${req.skillBody}
 
 ${filesBlock ? `## Supporting file previews\n${filesBlock}\n` : ""}
 ${marketBlock}
+${expertBlock}
 ## Checks to evaluate
 ${checksBlock}
 
@@ -189,6 +199,170 @@ export function ratioToStatus(r: number): "pass" | "partial" | "fail" {
 // ---------- 市场调研块渲染 ----------
 
 import type { MarketSurvey } from "../market/types";
+import { getFinanceScenario, getFinanceScenarioProfile, type FinanceScenarioId } from "../domain/finance";
+import type { SkillTypeContext } from "./types";
+
+/**
+ * 输出语言指令块。
+ * 与 CLI scripts/score.py:render_language_block 保持完全一致：
+ * 让 LLM 知道用什么语言写 evidence / fix / value_type_reason，
+ * 把"prompt 主体语言"（决定 system / checks 描述）与"作答语言"（决定报告读者
+ * 看到的文字语言）解耦，避免英文 SKILL.md 自动产出英文报告。
+ */
+function renderLanguageBlock(outputLang: "zh" | "en"): string {
+  if (outputLang === "zh") {
+    return `## 输出语言要求
+请用**简体中文**填写 \`evidence\`、\`fix\`、\`value_type_reason\` 字段。
+- 即使被测 SKILL.md 正文、附属文件或 frontmatter 是英文，仍然用简体中文回答。
+- 检查项 ID（JSON key 中的 \`<check.id>\`）保持英文原样，不要翻译。
+- 专有名词（API、JSON、schema、Pydantic 等）、文件路径、命令名保持原文。
+- 引用 SKILL.md / 子 SKILL.md 中的英文术语时，可在中文里直接保留原文（不需要翻译为生硬的中文）。
+`;
+  }
+  return `## Output language
+Write the \`evidence\`, \`fix\`, and \`value_type_reason\` fields in **English**.
+- Use English even when SKILL.md, supporting files, or frontmatter are in another language.
+- Keep check IDs (the \`<check.id>\` JSON keys) untranslated.
+- Keep proper nouns (API, JSON, schema, Pydantic, etc.), file paths, and command names in their original form.
+`;
+}
+
+/**
+ * skill 类型上下文块（pipeline / composite / atomic）。
+ * 与 CLI scripts/score.py:render_skill_type_block 保持完全一致：
+ * 让 LLM 知道这是 pipeline 编排器或工具集，而不是单一文档型 skill，
+ * 避免给出"在主 SKILL.md 里再写一遍 schema / workflow"的错建议。
+ */
+function renderSkillTypeBlock(ctx: SkillTypeContext, lang: "zh" | "en"): string {
+  const { skillType, autoDetected, subSkills = [] } = ctx;
+  const tag = autoDetected ? (lang === "zh" ? "（自动识别）" : " (auto-detected)") : (lang === "zh" ? "（用户指定）" : " (user-specified)");
+
+  if (lang === "zh") {
+    if (skillType === "pipeline") {
+      const subLines = subSkills
+        .slice(0, 10)
+        .map((s) => `  - \`${s.path}\` · ${s.name || "(未命名)"} · ${(s.description ?? "").length} 字描述 · ${s.bodyChars ?? 0} 字 body`)
+        .join("\n");
+      return `## skill 类型上下文${tag}
+当前评测包是 **pipeline / 多子 skill 编排型**：根目录 SKILL.md 是编排器（router / orchestrator），具体业务逻辑分布在 ${subSkills.length} 个子 SKILL.md 里。
+子 SKILL.md 列表（按发现顺序，正文已附在下面"附属文件预览"章节）：
+${subLines || "  (无)"}
+
+请按以下方式调整你的评估：
+1. **不要**因为根 SKILL.md 没写完整 schema / outputs / examples / detailed workflow 就扣分——这些通常下沉在子 SKILL.md 或代码（scripts/*.py, *.schema.json, pydantic.BaseModel 等）里；先去附属文件预览中查找证据，再下结论。
+2. \`cost.context_budget.skill_md_size\` 等针对单文档体积的标准对编排器可适当放宽：编排器写得克制更好，业务细节本来就该拆出去。
+3. \`biz.target_users.specific\` / \`act.has_examples\` 这类来自根 body 的判断，请综合所有 SKILL.md 一起看；只要任何一份 SKILL.md 写清楚了就算成立。
+4. 你会看到 5 个 **pipeline 专属**的 dim（applies_to=[pipeline]），评估时请严格对照 desc 给证据：
+   - \`rel.pipeline_routing.*\`：路由表 / 决策树 / 关键词映射是否显式；路由是否便宜（规则优先 vs 每次 LLM 路由）。
+   - \`rel.pipeline_boundaries.*\`：子 agent 是否避免重叠 + 是否覆盖完整（请用真实输入做心智测试）。
+   - \`rel.pipeline_io_protocol.*\`：子 agent IO 协议 + 主 skill 聚合策略（concat / vote / rank）写没写清。
+   - \`rel.pipeline_partial_failure.*\`：部分子 agent 失败时是 partial / fail-all / retry。
+   - \`rel.pipeline_subskill_quality.*\`（rule 类，会先扫子 SKILL.md 章节齐备性）。
+   evidence 引用具体子 SKILL.md 路径或缺失章节；fix 给出可粘贴的章节骨架。
+`;
+    }
+    if (skillType === "composite") {
+      return `## skill 类型上下文${tag}
+当前评测包是 **composite / 工具集合型**：包含多个相互独立的子 skill，没有强编排关系（用户可单独调用任何一个）。
+请按以下方式调整你的评估：
+1. 不要要求"统一的 workflow / 串行步骤"，composite 是并列工具，**单一职责**和**互不耦合**才是优点。
+2. 主 SKILL.md 不需要写所有功能细节，只要做好"导航 + 适用边界"即可。
+3. 你会看到 4 个 **composite 专属**的 dim（applies_to=[composite]），严格对照 desc 评估：
+   - \`rel.composite_tool_index.*\`：主 SKILL.md 是否给每个工具列入口 + 用途 + when-to-use（理想是 ## Tools 表格）。
+   - \`rel.composite_orthogonality.*\`：工具之间避免功能冗余；如有重叠，主 skill 是否说清"用哪个不用哪个"。
+   - \`rel.composite_consistency.*\`：命名 / 输出格式 / 错误码 / 版本号语义跨工具一致。
+   - \`rel.composite_discoverability.*\`：是否有 decision tree / checklist 让 caller 5 行内挑对工具。
+   evidence 应引用具体工具路径 or 缺失章节；fix 给可粘贴的章节骨架（例如 ## Tools 表格列名）。
+`;
+    }
+    return `## skill 类型上下文${tag}
+当前评测包是 **atomic / 单一职责型 skill**：一个 SKILL.md 解决一件事。按常规标准评估即可。
+`;
+  }
+
+  if (skillType === "pipeline") {
+    const subLines = subSkills
+      .slice(0, 10)
+      .map((s) => `  - \`${s.path}\` · ${s.name || "(unnamed)"} · ${(s.description ?? "").length}-char desc · ${s.bodyChars ?? 0}-char body`)
+      .join("\n");
+    return `## Skill type context${tag}
+This package is a **pipeline / multi-sub-skill orchestration**: the root SKILL.md is the orchestrator (router) and the actual business logic is split across ${subSkills.length} child SKILL.md files.
+Child SKILL.md (their bodies are attached below in "Supporting file previews"):
+${subLines || "  (none)"}
+
+Adjust your evaluation accordingly:
+1. **Do NOT** penalize the root SKILL.md for missing complete schema / outputs / examples / detailed workflow — those usually live in the child SKILL.md or in companion code (scripts/*.py, *.schema.json, pydantic.BaseModel). Look there first before scoring low.
+2. Standards for single-document size (e.g. \`cost.context_budget.skill_md_size\`) can be relaxed for an orchestrator — being concise is correct.
+3. For root-body checks like \`biz.target_users.specific\`, \`act.has_examples\` — read across ALL SKILL.md files; if any SKILL.md establishes the answer, count it as satisfied.
+4. You will see 5 **pipeline-specific** dims (applies_to=[pipeline]). Score each strictly per its desc:
+   - \`rel.pipeline_routing.*\`: explicit routing table / decision tree / keyword map; routing is cheap (rules first, LLM only for ambiguous cases).
+   - \`rel.pipeline_boundaries.*\`: sub-agents don't overlap AND coverage is complete (mentally route 5–10 realistic inputs).
+   - \`rel.pipeline_io_protocol.*\`: per-sub-agent IO contract + how the root aggregates (concat / vote / rank).
+   - \`rel.pipeline_partial_failure.*\`: behavior when some sub-agents fail (partial / fail-all / retry).
+   - \`rel.pipeline_subskill_quality.*\` (rule check, scans sub-SKILL.md sections).
+   Cite specific sub-SKILL.md paths or missing sections in evidence; ship a paste-ready section skeleton in fix.
+`;
+  }
+  if (skillType === "composite") {
+    return `## Skill type context${tag}
+This package is a **composite / toolkit bundle**: multiple independent sub-skills with no strong orchestration (any one can be invoked separately).
+Adjust your evaluation:
+1. Do NOT demand a unified workflow or serial steps; composite means parallel tools where single-responsibility and decoupling are virtues.
+2. The root SKILL.md only needs to do "navigation + usage boundaries", not full feature documentation.
+3. You will see 4 **composite-specific** dims (applies_to=[composite]). Score each strictly per its desc:
+   - \`rel.composite_tool_index.*\`: root SKILL.md lists every tool with entry point + when-to-use (ideally a ## Tools table).
+   - \`rel.composite_orthogonality.*\`: tools don't overlap; if they do, root explains "use this, not that".
+   - \`rel.composite_consistency.*\`: naming / output format / error codes / version semantics consistent across tools.
+   - \`rel.composite_discoverability.*\`: a decision tree / checklist that lets callers pick the right tool in 5 lines.
+   Cite specific tool paths or missing sections in evidence; ship a paste-ready section skeleton in fix.
+`;
+  }
+  return `## Skill type context${tag}
+This is an **atomic / single-purpose skill** — one SKILL.md doing one thing. Apply standard evaluation.
+`;
+}
+
+function renderExpertReviewBlock(
+  expertReview: { domain: "finance"; scenario: FinanceScenarioId; schemaVersion: string },
+  lang: "zh" | "en",
+): string {
+  const scenario = getFinanceScenario(expertReview.scenario);
+  const profile = getFinanceScenarioProfile(expertReview.scenario);
+  if (lang === "zh") {
+    const focus = profile.promptFocusZh.map((item) => `- ${item}`).join("\n");
+    return `## 领域专家版要求
+domain: ${expertReview.domain}
+schema_version: ${expertReview.schemaVersion}
+scenario: ${expertReview.scenario}
+scenario_name: ${scenario.name_zh}
+
+## 当前子场景专属评测重点
+${focus}
+
+请额外从金融专家视角评估 finance.* 检查项。金融专家版不是普通文档规范检查，也不是奖励作者把假设写完整；你必须进行客观判断：
+- 不要因为 SKILL.md 自称“有商业价值 / 有付费用户 / 风控完善”就给高分，必须看证据、工作流、场景真实度和可落地性；
+- 商业可用性要由你判断真实市场潜力、可复用价值、付费意愿和产品化难度；如果有潜力，请在 fix 里给出后续商业化模式、目标客群、定价或交付路径建议；
+- 数据、风控、可解释性、工程落地也要按“是否足以支撑真实金融决策/流程”评分，不只看是否写了对应章节；
+- evidence 写当前客观判断和扣分原因，fix 写你作为评审给出的专业改进建议。
+`;
+  }
+  const focus = profile.promptFocusEn.map((item) => `- ${item}`).join("\n");
+  return `## Domain Expert Requirements
+domain: ${expertReview.domain}
+schema_version: ${expertReview.schemaVersion}
+scenario: ${expertReview.scenario}
+scenario_name: ${scenario.name_en}
+
+## Scenario-Specific Evaluation Focus
+${focus}
+
+Also evaluate all finance.* checks from a finance expert perspective. This is not a generic documentation check and should not reward the author for merely writing assumptions. Make objective judgments:
+- Do not score high just because the SKILL.md claims "commercial value", "paid users", or "complete risk controls"; require evidence, workflow realism, scenario fit, and feasibility.
+- For commercial readiness, you judge real market potential, repeat-use value, willingness to pay, and productization difficulty. If potential exists, use fix to propose monetization models, target customers, pricing, or delivery paths.
+- For data, risk, explainability, and engineering, score by whether the skill can support real finance decisions or workflows, not by whether it has matching section headings.
+- evidence should state your objective diagnosis and reasons; fix should be your professional recommendation as the evaluator.
+`;
+}
 
 function renderMarketSurvey(survey: MarketSurvey, lang: "zh" | "en"): string {
   const heading = lang === "zh" ? "## 同类项目客观调研（GitHub Search 结果）" : "## Objective Market Survey (GitHub Search results)";

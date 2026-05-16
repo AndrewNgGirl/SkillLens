@@ -210,6 +210,9 @@ export const RUBRIC: Rubric = {
               "id": "market.scope_focus.disciplined",
               "type": "llm",
               "weight": 4,
+              "applies_to": [
+                "atomic"
+              ],
               "desc_zh": "做一件事做到 10 分，不是什么都能做的 5 分版本",
               "desc_en": "Does one thing well, not 'a bit of everything'",
               "fix_zh": "如果 description 里出现 ≥ 3 个不相关动词（'生成 + 翻译 + 校对 + 排版'），考虑拆成多个 skill。聚焦的 skill 在 Agent 调度时也更容易被选对。",
@@ -291,6 +294,10 @@ export const RUBRIC: Rubric = {
               "id": "cost.reference_layering.has_dirs",
               "type": "rule",
               "weight": 4,
+              "applies_to": [
+                "atomic",
+                "composite"
+              ],
               "desc_zh": "用 references/ scripts/ assets/ 子目录分层按需加载",
               "desc_en": "Uses references/ scripts/ assets/ for on-demand loading",
               "fix_zh": "建三个子目录：references/（长文档）、scripts/（确定性脚本）、assets/（模板和配置），SKILL.md 里只用一行路径引用即可。Agent 真要用时才加载。",
@@ -381,6 +388,10 @@ export const RUBRIC: Rubric = {
               "id": "rel.script_fallback.has_scripts",
               "type": "rule",
               "weight": 4,
+              "applies_to": [
+                "atomic",
+                "composite"
+              ],
               "desc_zh": "关键步骤用 scripts/ 下的代码兜底，不是纯让模型发挥",
               "desc_en": "Critical steps are anchored by code in scripts/, not pure LLM improv",
               "fix_zh": "建 scripts/ 目录，把关键的解析、校验、计算用脚本实现，SKILL.md 里调用脚本而不是让 LLM 生成。脚本输出确定性强，复跑结果一致。",
@@ -398,6 +409,9 @@ export const RUBRIC: Rubric = {
               "id": "rel.output_validation.declared",
               "type": "rule",
               "weight": 2,
+              "applies_to": [
+                "atomic"
+              ],
               "desc_zh": "明确声明输出格式（JSON schema / 字段列表 / 约束）",
               "desc_en": "Output format is declared (JSON schema / field list / constraints)",
               "fix_zh": "在 ## Outputs 下贴一段 JSON schema 或字段列表，规定字段名、类型、是否必填。Agent 照着填，错就当场发现。",
@@ -407,6 +421,9 @@ export const RUBRIC: Rubric = {
               "id": "rel.output_validation.enforced",
               "type": "llm",
               "weight": 2,
+              "applies_to": [
+                "atomic"
+              ],
               "desc_zh": "声明的格式有真正的校验步骤（不是只贴 schema 不验证）",
               "desc_en": "Declared format is actually validated (not just documented)",
               "fix_zh": "在 ## Workflow 最后加一步'校验输出'，用 jsonschema / pydantic / 正则检查，失败时按 ## Failure 路径处理。",
@@ -462,6 +479,237 @@ export const RUBRIC: Rubric = {
               "desc_en": "Discusses 2–3 edge cases or known limitations",
               "fix_zh": "加 ## Known limitations 列 2–3 条已知容易出问题的输入：超长文本、多语种混排、空文件等，并说明应对方式。",
               "fix_en": "Add ## Known limitations covering 2–3 trouble inputs (very long text, mixed languages, empty files) with mitigations."
+            }
+          ]
+        },
+        {
+          "id": "rel.pipeline_routing",
+          "name_zh": "路由设计",
+          "name_en": "Routing Design",
+          "weight": 5,
+          "applies_to": [
+            "pipeline"
+          ],
+          "checks": [
+            {
+              "id": "rel.pipeline_routing.explicit_rules",
+              "type": "llm",
+              "weight": 3,
+              "applies_to": [
+                "pipeline"
+              ],
+              "desc_zh": "主 SKILL.md 说清'什么输入路由到哪个子 agent'（路由表 / 决策树 / 关键词映射）",
+              "desc_en": "Root SKILL.md states 'which input goes to which sub-agent' (routing table / decision tree / keyword map)",
+              "fix_zh": "在 ## Routing 或 ## Workflow 加一张路由表：列出输入特征 → 调用哪个子 agent，包括重叠场景的优先级。让 caller / Agent 一眼能选对。",
+              "fix_en": "Add a ## Routing table: input feature → sub-agent, including priority for overlapping cases. Callers and agents pick correctly at a glance."
+            },
+            {
+              "id": "rel.pipeline_routing.cheap",
+              "type": "llm",
+              "weight": 2,
+              "applies_to": [
+                "pipeline"
+              ],
+              "desc_zh": "路由本身要省钱：能用规则/关键词路由的优先用，模糊场景才让 LLM 决策",
+              "desc_en": "Routing should be cheap: prefer rule/keyword routing; only fall back to LLM for ambiguous cases",
+              "fix_zh": "把高频/明确的输入映射做成关键词或正则规则，只把'真模糊'的请求交给 LLM 路由。否则每次调用都要先付一次 LLM 的钱。",
+              "fix_en": "Map clear-cut inputs via keyword or regex rules; reserve LLM-based routing for genuinely ambiguous requests. Otherwise every call pays an extra LLM hop."
+            }
+          ]
+        },
+        {
+          "id": "rel.pipeline_boundaries",
+          "name_zh": "子 agent 边界",
+          "name_en": "Sub-agent Boundaries",
+          "weight": 4,
+          "applies_to": [
+            "pipeline"
+          ],
+          "checks": [
+            {
+              "id": "rel.pipeline_boundaries.no_overlap",
+              "type": "llm",
+              "weight": 2,
+              "applies_to": [
+                "pipeline"
+              ],
+              "desc_zh": "子 agent 之间职责不重叠（不会出现两个子 agent 都能处理同一类输入）",
+              "desc_en": "Sub-agents don't overlap (no two sub-agents both claim the same input class)",
+              "fix_zh": "审视每个子 SKILL.md 的 description / 触发条件，画一张 2D 图：横轴是输入类型、纵轴是动作类型。重叠的格子要么合并子 agent，要么明确 priority。",
+              "fix_en": "Review each sub-SKILL.md's description / trigger. Plot a 2D grid (input × action) — collapse overlapping cells or set an explicit priority."
+            },
+            {
+              "id": "rel.pipeline_boundaries.complete_coverage",
+              "type": "llm",
+              "weight": 2,
+              "applies_to": [
+                "pipeline"
+              ],
+              "desc_zh": "子 agent 覆盖完整（用户合理请求都能落到某一个子 agent）",
+              "desc_en": "Sub-agent coverage is complete (every reasonable user request lands on some sub-agent)",
+              "fix_zh": "列出 5–10 个真实输入样例，标注每个应该走哪个子 agent。落不到任何子 agent 的输入需要：补一个子 agent，或在 ## Out of scope 显式拒绝。",
+              "fix_en": "List 5–10 realistic inputs and mark which sub-agent each routes to. Inputs that match nothing need either a new sub-agent or an explicit ## Out of scope rejection."
+            }
+          ]
+        },
+        {
+          "id": "rel.pipeline_io_protocol",
+          "name_zh": "IO 协议与聚合",
+          "name_en": "IO Protocol & Aggregation",
+          "weight": 3,
+          "applies_to": [
+            "pipeline"
+          ],
+          "checks": [
+            {
+              "id": "rel.pipeline_io_protocol.defined",
+              "type": "llm",
+              "weight": 3,
+              "applies_to": [
+                "pipeline"
+              ],
+              "desc_zh": "子 agent 之间的输入输出协议、主 skill 的聚合策略写清楚",
+              "desc_en": "IO contract between sub-agents and the root's aggregation strategy are explicit",
+              "fix_zh": "在 ## Aggregation / ## Sub-agent IO 段说清：每个子 agent 接什么输入、返回什么 shape；主 skill 怎么把多份子结果合并成最终输出（拼接？投票？打分排序？）。",
+              "fix_en": "Under ## Aggregation / ## Sub-agent IO, declare: what input each sub-agent accepts, the shape it returns, and how the root composes multiple sub-results (concat / vote / rank)."
+            }
+          ]
+        },
+        {
+          "id": "rel.pipeline_partial_failure",
+          "name_zh": "部分失败处理",
+          "name_en": "Partial Failure Handling",
+          "weight": 2,
+          "applies_to": [
+            "pipeline"
+          ],
+          "checks": [
+            {
+              "id": "rel.pipeline_partial_failure.handled",
+              "type": "llm",
+              "weight": 2,
+              "applies_to": [
+                "pipeline"
+              ],
+              "desc_zh": "部分子 agent 失败时主 skill 怎么办（聚合 partial / 整体失败 / 重试）",
+              "desc_en": "What the root does when some sub-agents fail (aggregate partial / fail-all / retry)",
+              "fix_zh": "在 ## Failure 章节区分：(a) 关键子 agent 失败 → 整体失败；(b) 非关键子 agent 失败 → 输出 partial 并标注哪些缺失；(c) 临时错误 → 重试 N 次。",
+              "fix_en": "Under ## Failure split into: (a) critical sub-agent fails → fail the whole run; (b) non-critical fails → emit partial and flag the missing piece; (c) transient → retry N times."
+            }
+          ]
+        },
+        {
+          "id": "rel.pipeline_subskill_quality",
+          "name_zh": "子 skill 自洽",
+          "name_en": "Sub-skill Self-containment",
+          "weight": 2,
+          "applies_to": [
+            "pipeline"
+          ],
+          "checks": [
+            {
+              "id": "rel.pipeline_subskill_quality.self_contained",
+              "type": "rule",
+              "weight": 2,
+              "applies_to": [
+                "pipeline"
+              ],
+              "desc_zh": "每个子 SKILL.md 自身可读、含必要章节（不能光靠主 SKILL.md，子 skill 全空壳）",
+              "desc_en": "Each sub-SKILL.md is self-contained with the right sections (sub-skills aren't empty shells reliant on the root)",
+              "fix_zh": "每个子 SKILL.md 至少包含 ## When to use / ## Inputs（或边界条件）/ ## Workflow（动作步骤）。子 agent 应该是能被独立调用、独立审查的最小单元。",
+              "fix_en": "Every sub-SKILL.md should ship at least ## When to use / ## Inputs (or trigger conditions) / ## Workflow. Sub-agents must be independently callable and reviewable units."
+            }
+          ]
+        },
+        {
+          "id": "rel.composite_tool_index",
+          "name_zh": "工具索引完整性",
+          "name_en": "Tool Index Completeness",
+          "weight": 4,
+          "applies_to": [
+            "composite"
+          ],
+          "checks": [
+            {
+              "id": "rel.composite_tool_index.has_index",
+              "type": "llm",
+              "weight": 4,
+              "applies_to": [
+                "composite"
+              ],
+              "desc_zh": "主 SKILL.md 列清楚每个工具的入口、用途、何时使用",
+              "desc_en": "Root SKILL.md lists every tool with entry point, purpose, and when-to-use",
+              "fix_zh": "在主 SKILL.md 加 ## Tools 章节，按表格列每个子工具：name / 一行描述 / 入口路径 / 适用场景一句话。这是 composite 的核心导航面。",
+              "fix_en": "Add ## Tools to the root SKILL.md: a table per sub-tool with name / one-liner / entry path / when-to-use. This is the composite's core navigation surface."
+            }
+          ]
+        },
+        {
+          "id": "rel.composite_orthogonality",
+          "name_zh": "工具正交性",
+          "name_en": "Tool Orthogonality",
+          "weight": 3,
+          "applies_to": [
+            "composite"
+          ],
+          "checks": [
+            {
+              "id": "rel.composite_orthogonality.no_overlap",
+              "type": "llm",
+              "weight": 3,
+              "applies_to": [
+                "composite"
+              ],
+              "desc_zh": "工具集合内部避免功能冗余，主 skill 说清'用哪个不用哪个'",
+              "desc_en": "Tools in the bundle don't overlap; the root explains 'use this, not that'",
+              "fix_zh": "审视有没有两个工具都能解决同一类问题。要么合并、要么在 ## Tools 表里加一列'与 X 的差异'。否则 Agent 选错工具的概率很高。",
+              "fix_en": "Find tools that solve the same problem. Either consolidate or add a 'diff vs X' column in the ## Tools table. Otherwise agents pick the wrong tool too often."
+            }
+          ]
+        },
+        {
+          "id": "rel.composite_consistency",
+          "name_zh": "集合一致性",
+          "name_en": "Bundle Consistency",
+          "weight": 2,
+          "applies_to": [
+            "composite"
+          ],
+          "checks": [
+            {
+              "id": "rel.composite_consistency.unified",
+              "type": "llm",
+              "weight": 2,
+              "applies_to": [
+                "composite"
+              ],
+              "desc_zh": "命名 / 输出风格跨工具是否统一（同一个 bundle 应该有一致的味道）",
+              "desc_en": "Naming and output style are consistent across tools (a bundle should have one voice)",
+              "fix_zh": "对齐：工具命名格式（kebab-case 全员）、输出格式（都用 JSON 还是都用 Markdown）、错误码风格、版本号语义。一致性差会让 caller 每用一个工具都要重学一次。",
+              "fix_en": "Align tool naming (all kebab-case), output format (uniform JSON vs Markdown), error code style, versioning. Inconsistency forces callers to relearn per tool."
+            }
+          ]
+        },
+        {
+          "id": "rel.composite_discoverability",
+          "name_zh": "工具发现性",
+          "name_en": "Tool Discoverability",
+          "weight": 2,
+          "applies_to": [
+            "composite"
+          ],
+          "checks": [
+            {
+              "id": "rel.composite_discoverability.has_decision_tree",
+              "type": "llm",
+              "weight": 2,
+              "applies_to": [
+                "composite"
+              ],
+              "desc_zh": "用户/Agent 怎么从一组工具里挑对一个：有 decision tree / checklist / 索引",
+              "desc_en": "How a user or agent picks the right tool from the bundle (decision tree / checklist / index)",
+              "fix_zh": "在主 SKILL.md 加 ## Choosing a tool：用 if/elif/else 或 yes-no decision tree 引导。'要解析 → tool A；要校验 → tool B；要批处理 → tool C'，5 行内能选对。",
+              "fix_en": "Add ## Choosing a tool with an if/elif/else or yes-no decision tree. 'Parsing → tool A; validating → tool B; batch → tool C' — pick correctly in 5 lines."
             }
           ]
         }
@@ -587,6 +835,9 @@ export const RUBRIC: Rubric = {
               "id": "struct.has_workflow",
               "type": "rule",
               "weight": 1.5,
+              "applies_to": [
+                "atomic"
+              ],
               "desc_zh": "有显式的 Workflow 章节，用编号列出每步",
               "desc_en": "Has explicit numbered Workflow section",
               "fix_zh": "加 ## Workflow，用 1/2/3 列出 Agent 执行每一步。",
@@ -614,6 +865,9 @@ export const RUBRIC: Rubric = {
               "id": "act.steps_atomic",
               "type": "llm",
               "weight": 2,
+              "applies_to": [
+                "atomic"
+              ],
               "desc_zh": "每一步只做一件事",
               "desc_en": "Each step is atomic",
               "fix_zh": "把'读取并校验并输出'拆成三步。一步一个动词、一个明确结果。",
@@ -623,6 +877,9 @@ export const RUBRIC: Rubric = {
               "id": "act.io_explicit",
               "type": "llm",
               "weight": 1.5,
+              "applies_to": [
+                "atomic"
+              ],
               "desc_zh": "输入、输出、前置条件都说清楚",
               "desc_en": "Inputs, outputs, preconditions are explicit",
               "fix_zh": "加 ## Inputs 和 ## Outputs 两节，分别说'要给什么 + 你会返回什么'。",

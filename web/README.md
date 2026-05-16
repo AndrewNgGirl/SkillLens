@@ -5,6 +5,12 @@
 
 SkillLens helps skill authors evaluate whether a skill is clear, valuable, reliable, lightweight, and ready to publish. It combines deterministic rule checks with optional LLM-based Deep Review and GitHub market research.
 
+The Web UI also includes a Finance Expert Review MVP. Users can choose a finance scenario before uploading, then full Deep Review adds `domainExpert.score`, finance risk level, and commercial readiness on top of the general SkillLens score.
+
+## Scope Of This README
+
+This file is only for running and configuring the Web app. For the full product overview, read `../README.md`. For Cursor, WorkBuddy, Hermes, or other code-agent workflows, use the official Agent CLI contract in `../skills/skill-scorer/USAGE.md`.
+
 ## What You Can Upload
 
 - A single `SKILL.md`
@@ -16,15 +22,19 @@ The built-in sample comes from `../skills/skill-scorer/examples/pr-reviewer`.
 
 ## Scoring Model
 
-The 100-point rubric has 5 pillars:
+The 100-point rubric has 5 pillars (Skill Value · Market Competitiveness · Runtime Cost · Reliability · Writeup Quality). Sub-dimensions are activated per skill structure:
 
-- Skill Value — target users, real need, value proposition, repeat use
-- Market Competitiveness — differentiation, focus, replaceability, alternatives
-- Runtime Cost — context size, dependency weight, layering, cacheability
-- Reliability — task fit, deterministic fallback, output validation, edge cases
-- Writeup Quality — metadata, discoverability, structure, safety, maintainability
+- **atomic** — single-purpose skill; uses the full shared backbone (script fallback, output validation, etc.)
+- **pipeline** — orchestrator over multiple sub SKILL.md; adds 5 type-specific dimensions (routing, sub-agent boundaries, IO protocol, partial-failure handling, sub-skill self-containment)
+- **composite** — independent toolkit bundle; adds 4 type-specific dimensions (tool index, orthogonality, consistency, discoverability)
 
-The rubric source is `../skills/skill-scorer/rubric/rubric.yaml`.
+The Uploader has 4 type cards above the upload area (Auto / Atomic / Pipeline / Composite) so users can override the auto-detection. Out-of-scope dimensions are folded into a "show N dimensions not applicable" toggle at the bottom of each pillar to keep the dashboard clean.
+
+The rubric source is `../skills/skill-scorer/rubric/rubric.yaml` (single source of truth, mirrored into `lib/rubric/rubric.ts` by `sync_rubric_to_ts.py`).
+
+The finance expert overlay source is `../skills/skill-scorer/domains/finance/rubric.yaml`.
+
+For the full rubric backbone, type-specific dimension table, and `applies_to` mechanism, see the root [`README.md`](../README.md) ("What It Evaluates" section) or [`USAGE.md`](../skills/skill-scorer/USAGE.md).
 
 ## Quick Start
 
@@ -62,6 +72,16 @@ npm run dev
 ```
 
 If no model key is configured, SkillLens falls back to mock scores so the UI can still be previewed.
+
+## Web Features
+
+- Upload a single `SKILL.md`, a skill folder, or a zipped skill package.
+- Choose `General Review` or a supported expert domain before upload.
+- Finance Expert Review currently supports fundraising, quant trading, stock trading, securities research, banking workflow, financial education, financial data analysis, and other finance scenarios.
+- Load built-in examples. Finance examples are mapped to the selected finance scenario.
+- Run optional LLM Deep Review when a provider key is configured.
+- View score KPI cards, radar charts, pillar/check details, top suggestions, and editable weights.
+- Export JSON, copy Markdown, or generate PDF.
 
 ## Code Agent / CLI Usage
 
@@ -104,7 +124,29 @@ MARKET_CACHE_TTL_MS=1800000
 - Next.js (App Router) + TypeScript + Tailwind
 - `gray-matter` for frontmatter, `yaml` for rubric, `jszip` for archives
 - Recharts for the radar chart, `html2canvas` + `jsPDF` for PDF export
-- Rubric 单一事实源：`../skills/skill-scorer/rubric/rubric.yaml`（通过 `lib/rubric/rubric.ts` 镜像到 TS）
+- General rubric source of truth: `../skills/skill-scorer/rubric/rubric.yaml`
+- Finance expert rubric source: `../skills/skill-scorer/domains/finance/rubric.yaml`
+- TypeScript rubric mirror: `lib/rubric/rubric.ts`
+
+## Important Directories
+
+```text
+web/
+├── app/                  # Pages and API routes
+│   └── api/
+│       ├── llm/          # Server-side LLM review endpoint
+│       ├── market/       # GitHub market survey endpoint
+│       └── sample/[id]/  # Built-in sample loader
+├── components/           # Upload, report, radar, pillar/check UI
+├── lib/
+│   ├── domain/           # Finance expert domain logic
+│   ├── llm/              # Provider, prompt, cache, and types
+│   ├── market/           # Keyword extraction and market client
+│   ├── rubric/           # TS mirror of the general rubric
+│   ├── scoring/          # Rule scoring, aggregation, LLM client
+│   └── spec/             # Skill loading and parsing
+└── .env.example
+```
 
 ## Scripts
 

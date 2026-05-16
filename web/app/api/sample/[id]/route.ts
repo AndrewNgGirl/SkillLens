@@ -6,14 +6,36 @@ import path from "node:path";
 // (entry SKILL.md + sibling files) so the frontend can drop it into
 // the same pipeline as a real upload.
 //
-// Whitelist of allowed example IDs → relative path under repo root.
+// Whitelist of allowed example IDs → directory name under skills/skill-scorer/examples.
 const SAMPLES: Record<string, string> = {
-  "pr-reviewer": "skills/skill-scorer/examples/pr-reviewer",
+  "pr-reviewer": "pr-reviewer",
+  // Pipeline showcase fixtures: pr-pipeline (3 sub-skills, inline density) and
+  // mega-pipeline (53 sub-skills, wide-banner overflow density). Used by the
+  // landing page to demo both sub-skill layouts.
+  "pr-pipeline": "pr-pipeline",
+  "mega-pipeline": "mega-pipeline",
+  "startup-fundraising-advisor": "startup-fundraising-advisor",
+  "quant-trading-researcher": "quant-trading-researcher",
+  "stock-trading-analyst": "stock-trading-analyst",
+  "securities-research-analyst": "securities-research-analyst",
+  "banking-workflow-assistant": "banking-workflow-assistant",
+  "financial-education-coach": "financial-education-coach",
+  "financial-data-analysis-agent": "financial-data-analysis-agent",
+  "finance-scenario-advisor": "finance-scenario-advisor",
 };
+
+const SAMPLE_ROOT = path.resolve(
+  /* turbopackIgnore: true */ process.cwd(),
+  "..",
+  "skills",
+  "skill-scorer",
+  "examples",
+);
 
 interface SampleFile {
   path: string;
   size: number;
+  preview?: string;
 }
 
 interface SamplePayload {
@@ -33,22 +55,28 @@ async function walk(dir: string, base: string): Promise<SampleFile[]> {
       out.push(...(await walk(full, base)));
     } else if (e.isFile()) {
       const stat = await fs.stat(full);
-      out.push({ path: path.relative(base, full).replace(/\\/g, "/"), size: stat.size });
+      const rel = path.relative(base, full).replace(/\\/g, "/");
+      const isText = /\.(md|markdown|yaml|yml|txt|json|py|ts|tsx|js|jsx|sh|toml|cfg|ini)$/i.test(rel);
+      const preview = isText && stat.size < 200 * 1024
+        ? previewOf(await fs.readFile(full, "utf-8"))
+        : undefined;
+      out.push({ path: rel, size: stat.size, preview });
     }
   }
   return out;
 }
 
+function previewOf(text: string): string {
+  return text.length <= 4000 ? text : `${text.slice(0, 4000)}\n...(truncated)`;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const rel = SAMPLES[id];
-  if (!rel) {
+  const sampleName = SAMPLES[id];
+  if (!sampleName) {
     return NextResponse.json({ error: "unknown_sample" }, { status: 404 });
   }
-  // process.cwd() is the web/ directory in `next start`; the examples
-  // live two levels up under skills/. Resolve via parent walk.
-  const repoRoot = path.resolve(process.cwd(), "..");
-  const sampleDir = path.join(repoRoot, rel);
+  const sampleDir = path.join(SAMPLE_ROOT, sampleName);
   try {
     const entry = path.join(sampleDir, "SKILL.md");
     const rawText = await fs.readFile(entry, "utf-8");

@@ -1,10 +1,33 @@
 import type { CheckStatus } from "../rubric/types";
 import type { MarketSurvey } from "../market/types";
+import type { FinanceScenarioId } from "../domain/finance";
 
 export interface LlmCheckItem {
   id: string;                  // e.g. "act.steps_atomic"
   desc_zh: string;
   desc_en: string;
+}
+
+/**
+ * v3.3 新增：skill 结构提示。
+ *  - "atomic"    单一职责 SKILL.md
+ *  - "pipeline"  根 SKILL.md 是编排器，业务逻辑分布在多个子 SKILL.md / scripts / schema 里
+ *  - "composite" 多个互不耦合的子 skill 工具集，根 SKILL.md 只做导航
+ *
+ * `skillTypeAutoDetected = true` 表示该值由前端 / CLI 自动推断（数子 SKILL.md 数量），
+ * 用户没有显式选择；prompt 端可据此调整语气（比如显式说"自动识别为 pipeline"）。
+ */
+export type SkillType = "atomic" | "pipeline" | "composite";
+
+export interface SkillTypeContext {
+  skillType: SkillType;
+  autoDetected: boolean;
+  subSkills?: Array<{
+    path: string;
+    name?: string;
+    description?: string;
+    bodyChars?: number;
+  }>;
 }
 
 export interface LlmReviewRequest {
@@ -20,6 +43,21 @@ export interface LlmReviewRequest {
    * 而不是盲猜文档。失败/空结果时省略此字段，prompt 会回退到旧行为。
    */
   marketSurvey?: MarketSurvey;
+  expertReview?: {
+    domain: "finance";
+    scenario: FinanceScenarioId;
+    schemaVersion: string;
+  };
+  /** v3.3：skill 结构上下文，pipeline / composite 评估时给 LLM 不同的 lens。 */
+  skillContext?: SkillTypeContext;
+  /**
+   * v3.4：LLM 输出语言。指定后 LLM 会把 evidence / fix / value_type_reason
+   * 用该语言书写，与 request.lang（决定 prompt 主体 / checks 描述语言）解耦：
+   *   - 不传：跟随 request.lang
+   *   - "zh"：始终用简体中文回答（即使 SKILL.md 是英文）
+   *   - "en"：始终用英文回答
+   */
+  outputLang?: "zh" | "en";
 }
 
 /** 单条检查的 LLM 评审结果 */

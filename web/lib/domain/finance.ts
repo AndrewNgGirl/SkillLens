@@ -1,0 +1,627 @@
+export type FinanceScenarioId =
+  | "startup_fundraising"
+  | "quant_trading"
+  | "stock_trading"
+  | "securities_research"
+  | "banking_workflow"
+  | "financial_education"
+  | "financial_data_analysis"
+  | "other";
+
+export interface FinanceScenario {
+  id: FinanceScenarioId;
+  name_zh: string;
+  name_en: string;
+}
+
+export interface FinanceCheckDef {
+  id: string;
+  weight: number;
+  desc_zh: string;
+  desc_en: string;
+}
+
+export interface FinancePillarDef {
+  id: string;
+  name_zh: string;
+  name_en: string;
+  weight: number;
+  checks: FinanceCheckDef[];
+}
+
+export interface FinanceScenarioProfile {
+  pillarWeights: Partial<Record<string, number>>;
+  extraChecks: Record<string, FinanceCheckDef[]>;
+  promptFocusZh: string[];
+  promptFocusEn: string[];
+}
+
+export const FINANCE_DOMAIN_VERSION = "finance-v4";
+
+export const FINANCE_SCENARIOS: FinanceScenario[] = [
+  { id: "startup_fundraising", name_zh: "投融资 / 创业融资", name_en: "Startup Fundraising" },
+  { id: "quant_trading", name_zh: "量化交易", name_en: "Quant Trading" },
+  { id: "stock_trading", name_zh: "炒股 / 短线 / 盯盘", name_en: "Stock Trading" },
+  { id: "securities_research", name_zh: "证券研究 / 投研", name_en: "Securities Research" },
+  { id: "banking_workflow", name_zh: "银行业务流程", name_en: "Banking Workflow" },
+  { id: "financial_education", name_zh: "金融知识教育", name_en: "Financial Education" },
+  { id: "financial_data_analysis", name_zh: "金融数据分析", name_en: "Financial Data Analysis" },
+  { id: "other", name_zh: "其他金融场景", name_en: "Other Finance Scenario" },
+];
+
+export const FINANCE_PILLARS: FinancePillarDef[] = [
+  {
+    id: "finance.scenario_fit",
+    name_zh: "场景适配度",
+    name_en: "Scenario Fit",
+    weight: 15,
+    checks: [
+      {
+        id: "finance.scenario_fit.user_and_boundary",
+        weight: 8,
+        desc_zh: "LLM 客观判断目标用户、使用边界和任务类型是否成立，不只看作者是否声明",
+        desc_en: "Objectively judges whether users, boundaries, and task type are valid, not merely whether the author stated them",
+      },
+      {
+        id: "finance.scenario_fit.scenario_specificity",
+        weight: 7,
+        desc_zh: "LLM 评估该 skill 是否真正匹配所选金融场景的真实流程和决策节点",
+        desc_en: "Evaluates whether the skill genuinely fits the selected finance workflow and decision points",
+      },
+    ],
+  },
+  {
+    id: "finance.professionalism",
+    name_zh: "金融专业性",
+    name_en: "Finance Professionalism",
+    weight: 20,
+    checks: [
+      {
+        id: "finance.professionalism.concepts",
+        weight: 7,
+        desc_zh: "LLM 校验金融概念、指标、市场机制是否专业准确，不能只接受自称专业",
+        desc_en: "Checks whether concepts, metrics, and market mechanisms are professionally accurate, not just self-claimed",
+      },
+      {
+        id: "finance.professionalism.framework",
+        weight: 7,
+        desc_zh: "LLM 判断分析框架是否完整且适配场景，并指出缺失的专业环节",
+        desc_en: "Judges whether the analysis framework is complete and scenario-fit, and names missing professional steps",
+      },
+      {
+        id: "finance.professionalism.bias_and_assumptions",
+        weight: 6,
+        desc_zh: "区分事实、假设、相关性与因果，避免确定性预测",
+        desc_en: "Separates facts, assumptions, correlation, and causality; avoids deterministic prediction",
+      },
+    ],
+  },
+  {
+    id: "finance.data_evidence",
+    name_zh: "数据与证据质量",
+    name_en: "Data & Evidence Quality",
+    weight: 15,
+    checks: [
+      {
+        id: "finance.data_evidence.sources",
+        weight: 5,
+        desc_zh: "LLM 判断数据来源、时效和口径是否足以支撑结论，声明不足时应降分",
+        desc_en: "Judges whether data sources, freshness, and conventions sufficiently support conclusions; unsupported claims score lower",
+      },
+      {
+        id: "finance.data_evidence.traceability",
+        weight: 5,
+        desc_zh: "LLM 检查结论是否可追溯到具体数据、公告、财报、新闻或用户上传字段",
+        desc_en: "Checks whether conclusions trace to specific data, filings, reports, news, or uploaded fields",
+      },
+      {
+        id: "finance.data_evidence.failure_modes",
+        weight: 5,
+        desc_zh: "处理缺数据、延迟、限流、口径不一致等数据失败路径",
+        desc_en: "Handles missing data, latency, rate limits, and inconsistent data definitions",
+      },
+    ],
+  },
+  {
+    id: "finance.risk_compliance",
+    name_zh: "风险控制与合规",
+    name_en: "Risk Control & Compliance",
+    weight: 20,
+    checks: [
+      {
+        id: "finance.risk_compliance.advice_boundary",
+        weight: 5,
+        desc_zh: "LLM 主动识别投资建议、收益承诺和交易诱导风险，而不只看免责声明",
+        desc_en: "Actively detects advice, return-promise, and trade-inducement risks, not just disclaimers",
+      },
+      {
+        id: "finance.risk_compliance.risk_disclosure",
+        weight: 5,
+        desc_zh: "LLM 判断关键风险是否被实质覆盖，并补充遗漏风险建议",
+        desc_en: "Judges whether key risks are substantively covered and recommends missing risk disclosures",
+      },
+      {
+        id: "finance.risk_compliance.privacy_and_controls",
+        weight: 5,
+        desc_zh: "处理客户资料、交易流水、征信、财务报表等敏感信息",
+        desc_en: "Handles sensitive data such as customer info, trades, credit data, and financial statements",
+      },
+      {
+        id: "finance.risk_compliance.human_review",
+        weight: 5,
+        desc_zh: "高风险金融判断、交易、审批保留人工复核和日志",
+        desc_en: "Keeps human review and audit logs for high-risk judgments, trades, or approvals",
+      },
+    ],
+  },
+  {
+    id: "finance.explainability",
+    name_zh: "决策可解释性",
+    name_en: "Decision Explainability",
+    weight: 10,
+    checks: [
+      {
+        id: "finance.explainability.structure",
+        weight: 5,
+        desc_zh: "LLM 判断输出结构是否真正便于金融决策复核，而不只是列了标题",
+        desc_en: "Judges whether the output structure genuinely supports finance decision review, not just headings",
+      },
+      {
+        id: "finance.explainability.sensitivity",
+        weight: 5,
+        desc_zh: "LLM 评估是否给出有用的置信度、情景分析、敏感变量和失效条件",
+        desc_en: "Evaluates whether confidence, scenarios, key sensitivities, and invalidation conditions are useful",
+      },
+    ],
+  },
+  {
+    id: "finance.engineering",
+    name_zh: "工程落地性",
+    name_en: "Engineering Readiness",
+    weight: 10,
+    checks: [
+      {
+        id: "finance.engineering.scripted_controls",
+        weight: 5,
+        desc_zh: "LLM 判断关键数据、计算、回测、校验是否具备可落地的工程兜底",
+        desc_en: "Judges whether data, calculation, backtest, and validation have practical engineering safeguards",
+      },
+      {
+        id: "finance.engineering.auditability",
+        weight: 5,
+        desc_zh: "支持结构化输出、日志、版本、审计和异常处理",
+        desc_en: "Supports structured output, logs, versions, auditability, and failure handling",
+      },
+    ],
+  },
+  {
+    id: "finance.commercial_readiness",
+    name_zh: "商业可用性",
+    name_en: "Commercial Readiness",
+    weight: 10,
+    checks: [
+      {
+        id: "finance.commercial_readiness.workflow_value",
+        weight: 5,
+        desc_zh: "LLM 客观评估该 skill 是否真的解决高频或高价值金融工作，而不是复述作者设想",
+        desc_en: "Objectively evaluates whether the skill solves high-frequency or high-value finance work, not merely restating the author's idea",
+      },
+      {
+        id: "finance.commercial_readiness.paid_potential",
+        weight: 5,
+        desc_zh: "LLM 判断真实付费潜力，并在 fix 中给出可行商业化模式、目标客群或产品化路径",
+        desc_en: "Judges real paid potential and uses fix to propose viable monetization models, target customers, or productization paths",
+      },
+    ],
+  },
+];
+
+export const FINANCE_SCENARIO_PROFILES: Record<FinanceScenarioId, FinanceScenarioProfile> = {
+  stock_trading: {
+    pillarWeights: {
+      "finance.risk_compliance": 24,
+      "finance.data_evidence": 18,
+      "finance.professionalism": 18,
+      "finance.explainability": 12,
+      "finance.engineering": 10,
+      "finance.scenario_fit": 10,
+      "finance.commercial_readiness": 8,
+    },
+    extraChecks: {
+      "finance.risk_compliance": [
+        {
+          id: "finance.stock_trading.risk.no_direct_trade_advice",
+          weight: 5,
+          desc_zh: "识别并压制直接买卖建议、收益承诺、追涨诱导和个性化荐股风险",
+          desc_en: "Detects and limits direct trade advice, return promises, chase-buy inducement, and personalized stock-picking risk",
+        },
+        {
+          id: "finance.stock_trading.risk.volatility_and_liquidity",
+          weight: 4,
+          desc_zh: "评估高波动、流动性、滑点、封单质量和情绪退潮风险是否被处理",
+          desc_en: "Evaluates handling of volatility, liquidity, slippage, limit-order quality, and sentiment reversal risk",
+        },
+        {
+          id: "finance.stock_trading.risk.position_and_invalidation",
+          weight: 4,
+          desc_zh: "评估是否要求仓位约束、失效条件、止损纪律和人工复核，而不是只给观察理由",
+          desc_en: "Evaluates position constraints, invalidation conditions, stop discipline, and human review instead of only watchlist reasons",
+        },
+      ],
+      "finance.data_evidence": [
+        {
+          id: "finance.stock_trading.data.realtime_freshness",
+          weight: 5,
+          desc_zh: "评估行情、资金、涨停归因、新闻和时间戳是否满足短线决策的时效要求",
+          desc_en: "Evaluates whether quote, capital flow, limit-up reason, news, and timestamps are fresh enough for short-term trading decisions",
+        },
+      ],
+      "finance.explainability": [
+        {
+          id: "finance.stock_trading.explainability.counter_signals",
+          weight: 4,
+          desc_zh: "评估是否同时呈现反方信号、情绪退潮条件和次日验证点",
+          desc_en: "Evaluates whether counter-signals, sentiment reversal conditions, and next-session validation points are shown",
+        },
+      ],
+    },
+    promptFocusZh: [
+      "按 A 股短线/盯盘/题材轮动场景评估，重点看实时性、涨停归因、资金流、换手率、量比、流动性和情绪周期。",
+      "严禁把观察池、风险清单包装成买卖指令；对追高、打板、收益承诺、个性化荐股要严格扣分。",
+      "商业化建议应偏向投教工具、复盘 SaaS、团队研究模板、数据源增值，而不是荐股收费。",
+    ],
+    promptFocusEn: [
+      "Evaluate as A-share short-term trading/watchlist/theme-rotation work, emphasizing freshness, limit-up attribution, capital flow, turnover, volume ratio, liquidity, and sentiment cycle.",
+      "Do not allow watchlists or risk checklists to become buy/sell instructions. Penalize chase-buying, limit-up speculation, return promises, and personalized stock picks.",
+      "Commercial suggestions should prefer education tools, replay SaaS, team research templates, or data-source add-ons rather than paid stock tips.",
+    ],
+  },
+  quant_trading: {
+    pillarWeights: {
+      "finance.engineering": 22,
+      "finance.data_evidence": 20,
+      "finance.risk_compliance": 18,
+      "finance.professionalism": 16,
+      "finance.explainability": 10,
+      "finance.scenario_fit": 8,
+      "finance.commercial_readiness": 6,
+    },
+    extraChecks: {
+      "finance.data_evidence": [
+        {
+          id: "finance.quant_trading.data.backtest_validity",
+          weight: 6,
+          desc_zh: "评估回测是否处理样本外验证、幸存者偏差、前视偏差、手续费和滑点",
+          desc_en: "Evaluates whether backtests handle out-of-sample validation, survivorship bias, lookahead bias, fees, and slippage",
+        },
+        {
+          id: "finance.quant_trading.data.regime_robustness",
+          weight: 5,
+          desc_zh: "评估策略是否考虑不同市场状态、样本分段、参数稳定性和过拟合风险",
+          desc_en: "Evaluates market regimes, sample segmentation, parameter stability, and overfitting risk",
+        },
+      ],
+      "finance.engineering": [
+        {
+          id: "finance.quant_trading.engineering.reproducibility",
+          weight: 6,
+          desc_zh: "评估策略计算、特征、数据版本和实验结果是否可复现",
+          desc_en: "Evaluates reproducibility of strategy calculations, features, data versions, and experiment results",
+        },
+        {
+          id: "finance.quant_trading.engineering.execution_monitoring",
+          weight: 5,
+          desc_zh: "评估实盘执行、风控开关、异常监控、回撤告警和回滚机制是否清楚",
+          desc_en: "Evaluates live execution, risk switches, anomaly monitoring, drawdown alerts, and rollback mechanisms",
+        },
+      ],
+      "finance.risk_compliance": [
+        {
+          id: "finance.quant_trading.risk.leverage_and_capacity",
+          weight: 4,
+          desc_zh: "评估是否处理杠杆、容量、冲击成本、极端行情和策略失效风险",
+          desc_en: "Evaluates leverage, capacity, market impact, extreme events, and strategy failure risk",
+        },
+      ],
+    },
+    promptFocusZh: [
+      "按量化研究/策略开发场景评估，重点看回测可信度、样本外、偏差控制、手续费滑点和复现性。",
+      "高分必须有严谨的数据处理和实验设计；只写策略想法或收益曲线不能高分。",
+    ],
+    promptFocusEn: [
+      "Evaluate as quant research/strategy development, emphasizing backtest validity, out-of-sample testing, bias control, fees, slippage, and reproducibility.",
+      "High scores require rigorous data handling and experiment design; strategy ideas or return curves alone are insufficient.",
+    ],
+  },
+  startup_fundraising: {
+    pillarWeights: {
+      "finance.commercial_readiness": 20,
+      "finance.professionalism": 18,
+      "finance.explainability": 16,
+      "finance.data_evidence": 14,
+      "finance.scenario_fit": 14,
+      "finance.risk_compliance": 10,
+      "finance.engineering": 8,
+    },
+    extraChecks: {
+      "finance.professionalism": [
+        {
+          id: "finance.startup_fundraising.professionalism.investor_logic",
+          weight: 5,
+          desc_zh: "评估是否覆盖投资人关心的市场规模、增长、单位经济、竞争和融资用途逻辑",
+          desc_en: "Evaluates coverage of investor logic: market size, growth, unit economics, competition, and use of funds",
+        },
+        {
+          id: "finance.startup_fundraising.professionalism.market_validation",
+          weight: 5,
+          desc_zh: "评估是否客观验证市场规模、客户痛点、竞争格局和增长证据，而不是只写愿景",
+          desc_en: "Evaluates objective validation of market size, customer pain, competition, and growth evidence instead of vision only",
+        },
+      ],
+      "finance.explainability": [
+        {
+          id: "finance.startup_fundraising.explainability.financial_model",
+          weight: 5,
+          desc_zh: "评估财务预测、估值、融资假设是否透明、可解释、不过度乐观",
+          desc_en: "Evaluates whether financial forecasts, valuation, and fundraising assumptions are transparent, explainable, and not overly optimistic",
+        },
+      ],
+      "finance.risk_compliance": [
+        {
+          id: "finance.startup_fundraising.risk.securities_and_confidentiality",
+          weight: 4,
+          desc_zh: "评估是否避免违规融资承诺、夸大收益，并处理投资人材料和商业机密边界",
+          desc_en: "Evaluates avoidance of non-compliant fundraising claims, exaggerated returns, and handling of investor-material confidentiality",
+        },
+      ],
+      "finance.data_evidence": [
+        {
+          id: "finance.startup_fundraising.data.traction_evidence",
+          weight: 5,
+          desc_zh: "评估收入、留存、获客、毛利、现金流等关键牵引力数据是否可信且可追溯",
+          desc_en: "Evaluates whether traction data such as revenue, retention, acquisition, margin, and cash flow is credible and traceable",
+        },
+      ],
+    },
+    promptFocusZh: [
+      "按创业融资/投融资材料评估，重点看投资人视角、商业模式、财务预测、估值逻辑和融资用途。",
+      "商业建议应给出可执行的融资材料、数据室、投资人分层或顾问服务产品化路径。",
+    ],
+    promptFocusEn: [
+      "Evaluate as startup fundraising/investment material, emphasizing investor logic, business model, financial forecasts, valuation, and use of funds.",
+      "Commercial suggestions should cover fundraising materials, data rooms, investor segmentation, or advisory productization.",
+    ],
+  },
+  securities_research: {
+    pillarWeights: {
+      "finance.professionalism": 24,
+      "finance.data_evidence": 18,
+      "finance.explainability": 18,
+      "finance.risk_compliance": 14,
+      "finance.scenario_fit": 10,
+      "finance.engineering": 8,
+      "finance.commercial_readiness": 8,
+    },
+    extraChecks: {
+      "finance.professionalism": [
+        {
+          id: "finance.securities_research.professionalism.valuation_model",
+          weight: 6,
+          desc_zh: "评估估值模型、财报口径、行业比较和核心假设是否专业可信",
+          desc_en: "Evaluates valuation model, financial-report conventions, peer comparison, and key assumptions",
+        },
+        {
+          id: "finance.securities_research.professionalism.thesis_quality",
+          weight: 5,
+          desc_zh: "评估投资主线、催化剂、盈利驱动、行业比较和反方论证是否构成完整研究闭环",
+          desc_en: "Evaluates whether thesis, catalysts, earnings drivers, peer comparison, and counter-thesis form a complete research loop",
+        },
+      ],
+      "finance.risk_compliance": [
+        {
+          id: "finance.securities_research.risk.rating_boundary",
+          weight: 4,
+          desc_zh: "评估研究结论是否避免无牌投资评级、确定性目标价和误导性推荐",
+          desc_en: "Evaluates whether research avoids unlicensed ratings, deterministic target prices, and misleading recommendations",
+        },
+      ],
+      "finance.data_evidence": [
+        {
+          id: "finance.securities_research.data.source_recency",
+          weight: 5,
+          desc_zh: "评估财报、公告、电话会、行业数据和价格数据是否有明确来源与时效",
+          desc_en: "Evaluates sources and recency of financial reports, filings, calls, industry data, and prices",
+        },
+      ],
+      "finance.explainability": [
+        {
+          id: "finance.securities_research.explainability.assumption_sensitivity",
+          weight: 4,
+          desc_zh: "评估关键假设、估值敏感性、上行/下行场景和风险触发条件是否清楚",
+          desc_en: "Evaluates key assumptions, valuation sensitivity, upside/downside cases, and risk triggers",
+        },
+      ],
+    },
+    promptFocusZh: [
+      "按证券研究/投研场景评估，重点看财报口径、估值模型、行业比较、反方证据和评级边界。",
+      "不要把普通资讯总结当成投研能力；必须区分事实、假设、估值和风险。",
+    ],
+    promptFocusEn: [
+      "Evaluate as securities research, emphasizing financial-report conventions, valuation, peer comparison, counter-evidence, and rating boundaries.",
+      "Do not treat news summarization as research quality; separate facts, assumptions, valuation, and risks.",
+    ],
+  },
+  banking_workflow: {
+    pillarWeights: {
+      "finance.risk_compliance": 26,
+      "finance.engineering": 18,
+      "finance.data_evidence": 16,
+      "finance.scenario_fit": 14,
+      "finance.professionalism": 12,
+      "finance.explainability": 8,
+      "finance.commercial_readiness": 6,
+    },
+    extraChecks: {
+      "finance.risk_compliance": [
+        {
+          id: "finance.banking_workflow.risk.approval_audit",
+          weight: 6,
+          desc_zh: "评估审批链路、权限控制、审计日志、客户敏感数据和监管留痕是否充分",
+          desc_en: "Evaluates approval flow, permissions, audit logs, sensitive customer data, and regulatory traceability",
+        },
+        {
+          id: "finance.banking_workflow.risk.model_governance",
+          weight: 5,
+          desc_zh: "评估是否覆盖模型治理、权限分级、数据最小化、人工审批和监管问责",
+          desc_en: "Evaluates model governance, permission tiers, data minimization, human approval, and regulatory accountability",
+        },
+      ],
+      "finance.engineering": [
+        {
+          id: "finance.banking_workflow.engineering.system_integration",
+          weight: 5,
+          desc_zh: "评估是否考虑核心系统、CRM、风控、工单或流程引擎的集成约束",
+          desc_en: "Evaluates integration constraints with core banking, CRM, risk systems, ticketing, or workflow engines",
+        },
+        {
+          id: "finance.banking_workflow.engineering.exception_sla",
+          weight: 4,
+          desc_zh: "评估异常件、超时、退回、补件、SLA 和人工接管路径是否可执行",
+          desc_en: "Evaluates actionable paths for exceptions, timeout, rejection, resubmission, SLA, and human takeover",
+        },
+      ],
+    },
+    promptFocusZh: [
+      "按银行业务流程评估，重点看审批链路、权限、审计、客户数据、监管留痕和系统集成。",
+      "商业建议应偏向内部效率工具、合规审计、流程质检或私有化交付。",
+    ],
+    promptFocusEn: [
+      "Evaluate as a banking workflow, emphasizing approval chains, permissions, audits, customer data, regulatory traceability, and system integration.",
+      "Commercial suggestions should prefer internal efficiency tools, compliance audit, process QA, or private deployment.",
+    ],
+  },
+  financial_education: {
+    pillarWeights: {
+      "finance.explainability": 22,
+      "finance.risk_compliance": 18,
+      "finance.professionalism": 18,
+      "finance.scenario_fit": 14,
+      "finance.commercial_readiness": 12,
+      "finance.data_evidence": 10,
+      "finance.engineering": 6,
+    },
+    extraChecks: {
+      "finance.explainability": [
+        {
+          id: "finance.financial_education.explainability.learning_design",
+          weight: 6,
+          desc_zh: "评估是否有清晰学习路径、误区纠正、案例练习和知识迁移设计",
+          desc_en: "Evaluates learning path, misconception correction, practice cases, and knowledge transfer design",
+        },
+        {
+          id: "finance.financial_education.explainability.assessment_feedback",
+          weight: 4,
+          desc_zh: "评估是否有测验、反馈、错因分析和学习进度追踪，而不是只输出讲解",
+          desc_en: "Evaluates quizzes, feedback, error analysis, and progress tracking instead of explanation only",
+        },
+      ],
+      "finance.risk_compliance": [
+        {
+          id: "finance.financial_education.risk.suitability_boundary",
+          weight: 5,
+          desc_zh: "评估是否区分教育内容和个性化投资建议，并处理新手误用风险",
+          desc_en: "Evaluates separation of education from personalized advice and handles beginner misuse risk",
+        },
+      ],
+    },
+    promptFocusZh: [
+      "按金融投教/知识教育评估，重点看概念准确、学习路径、案例练习、误区纠正和投资建议边界。",
+      "商业建议可考虑课程、会员、企业培训、内容工具或投教 SaaS。",
+    ],
+    promptFocusEn: [
+      "Evaluate as financial education, emphasizing concept accuracy, learning path, practice cases, misconception correction, and advice boundaries.",
+      "Commercial suggestions can include courses, memberships, corporate training, content tools, or education SaaS.",
+    ],
+  },
+  financial_data_analysis: {
+    pillarWeights: {
+      "finance.data_evidence": 24,
+      "finance.engineering": 18,
+      "finance.explainability": 16,
+      "finance.professionalism": 14,
+      "finance.scenario_fit": 10,
+      "finance.risk_compliance": 10,
+      "finance.commercial_readiness": 8,
+    },
+    extraChecks: {
+      "finance.data_evidence": [
+        {
+          id: "finance.financial_data_analysis.data.lineage_quality",
+          weight: 6,
+          desc_zh: "评估数据血缘、字段口径、清洗逻辑、异常值和可追溯性是否可靠",
+          desc_en: "Evaluates data lineage, field definitions, cleaning logic, outliers, and traceability",
+        },
+        {
+          id: "finance.financial_data_analysis.data.statistical_validity",
+          weight: 5,
+          desc_zh: "评估统计方法、采样偏差、异常值处理、指标定义和结论显著性是否可靠",
+          desc_en: "Evaluates statistical methods, sampling bias, outlier handling, metric definitions, and conclusion significance",
+        },
+      ],
+      "finance.engineering": [
+        {
+          id: "finance.financial_data_analysis.engineering.pipeline_quality",
+          weight: 5,
+          desc_zh: "评估数据管道、结构化输出、可视化、批处理和异常监控是否可落地",
+          desc_en: "Evaluates data pipelines, structured outputs, visualization, batch processing, and anomaly monitoring",
+        },
+      ],
+      "finance.risk_compliance": [
+        {
+          id: "finance.financial_data_analysis.risk.data_privacy_governance",
+          weight: 4,
+          desc_zh: "评估数据权限、脱敏、共享边界、审计和合规数据治理是否充分",
+          desc_en: "Evaluates data permissions, anonymization, sharing boundaries, audit, and compliant data governance",
+        },
+      ],
+    },
+    promptFocusZh: [
+      "按金融数据分析场景评估，重点看数据血缘、字段口径、清洗逻辑、异常值、可视化和结构化输出。",
+      "商业建议应偏向数据分析工作台、报表自动化、API/插件或团队版分析模板。",
+    ],
+    promptFocusEn: [
+      "Evaluate as financial data analysis, emphasizing data lineage, field definitions, cleaning logic, outliers, visualization, and structured output.",
+      "Commercial suggestions should prefer analytics workbench, report automation, API/plugins, or team analysis templates.",
+    ],
+  },
+  other: {
+    pillarWeights: {},
+    extraChecks: {},
+    promptFocusZh: [
+      "按一般金融场景评估，先判断最接近的业务流程，再按金融专业性、数据证据、风控合规和商业价值打分。",
+    ],
+    promptFocusEn: [
+      "Evaluate as a general finance scenario: infer the closest workflow, then score professionalism, data evidence, risk/compliance, and commercial value.",
+    ],
+  },
+};
+
+export function getFinanceScenario(id: string | undefined): FinanceScenario {
+  return FINANCE_SCENARIOS.find((s) => s.id === id) ?? FINANCE_SCENARIOS[0];
+}
+
+export function getFinanceScenarioProfile(id: string | undefined): FinanceScenarioProfile {
+  return FINANCE_SCENARIO_PROFILES[getFinanceScenario(id).id];
+}
+
+export function getFinancePillarsForScenario(id: string | undefined): FinancePillarDef[] {
+  const profile = getFinanceScenarioProfile(id);
+  return FINANCE_PILLARS.map((pillar) => ({
+    ...pillar,
+    weight: profile.pillarWeights[pillar.id] ?? pillar.weight,
+    checks: [
+      ...pillar.checks,
+      ...(profile.extraChecks[pillar.id] ?? []),
+    ],
+  }));
+}

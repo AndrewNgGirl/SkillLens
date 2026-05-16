@@ -26,6 +26,14 @@ function pillarName(id: string, lang: Lang): string {
   return id;
 }
 
+function dimensionName(id: string, lang: Lang): string {
+  for (const p of RUBRIC.pillars) {
+    const dim = p.dimensions.find((x) => x.id === id);
+    if (dim) return lang === "zh" ? dim.name_zh : dim.name_en;
+  }
+  return id;
+}
+
 export default function SuggestionCard({ suggestion: s, index, lang }: Props) {
   const t = MESSAGES[lang];
   const isHigh = s.severity === "high";
@@ -48,11 +56,15 @@ export default function SuggestionCard({ suggestion: s, index, lang }: Props) {
           {index + 1}
         </span>
         <div className="flex-1 min-w-0">
-          <h4 className="font-semibold text-slate-800 leading-snug">{s.title}</h4>
+          <div className="text-[11px] font-medium text-slate-400">
+            {lang === "zh" ? "建议 / 改法" : "Recommendation"}
+          </div>
+          <h4 className="mt-1 text-base font-semibold text-slate-900 leading-snug">{s.how}</h4>
           <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
             <span className={["text-[10px] rounded-full px-1.5 py-0.5 font-medium", pillarBadgeCls].join(" ")}>
               {pillarName(s.pillarId, lang)}
             </span>
+            <span className="text-[11px] text-slate-400">{dimensionName(s.dimensionId, lang)}</span>
             <span className="text-[11px] text-slate-400 font-mono">{s.checkId}</span>
           </div>
         </div>
@@ -66,14 +78,16 @@ export default function SuggestionCard({ suggestion: s, index, lang }: Props) {
         </span>
       </header>
 
-      <div className="mt-3 space-y-2 text-sm leading-relaxed">
-        <p>
+      <div className="mt-3 space-y-2 leading-relaxed">
+        <div className="rounded-lg bg-white/75 ring-1 ring-white/80 px-2.5 py-2 text-xs">
+          <div className="text-slate-400 font-medium">
+            {lang === "zh" ? "对应内容" : "What this addresses"}
+          </div>
+          <div className="mt-0.5 text-slate-600">{s.title}</div>
+        </div>
+        <p className="text-xs">
           <span className="inline-block text-slate-400 font-medium mr-1.5">{t.nowLabel}</span>
-          <span className="text-slate-700">{s.why}</span>
-        </p>
-        <p>
-          <span className="inline-block text-brand-600 font-medium mr-1.5">{t.fixLabel}</span>
-          <span className="text-slate-800">{s.how}</span>
+          <span className="text-slate-600">{s.why}</span>
         </p>
         {s.example && (
           <details className="mt-1">

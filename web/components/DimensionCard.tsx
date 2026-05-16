@@ -10,6 +10,8 @@ interface Props {
   lang: Lang;
   /** compact 模式：嵌套在 PillarSection 里时去掉外层 glass / 缩小字号 */
   compact?: boolean;
+  weightValue?: number;
+  onWeightChange?: (weight: number) => void;
 }
 
 function findDimDef(dimId: string) {
@@ -25,10 +27,14 @@ const STATUS_STYLES: Record<string, string> = {
   partial: "bg-amber-50  text-amber-700  ring-amber-200",
   fail:    "bg-rose-50   text-rose-700   ring-rose-200",
   n_a:     "bg-stone-50  text-stone-500  ring-stone-200",
+  // not_applicable = explicitly filtered by applies_to (different from n_a
+  // which is "would have been LLM-evaluated but no result yet"). Slate to
+  // visually mark "out of scope, not counted."
+  not_applicable: "bg-slate-50 text-slate-500 ring-slate-200",
 };
 
 const STATUS_ICON: Record<string, string> = {
-  pass: "✓", partial: "~", fail: "✕", n_a: "·",
+  pass: "✓", partial: "~", fail: "✕", n_a: "·", not_applicable: "—",
 };
 
 function confidenceText(c: { confidence?: number; confidencePolicy?: string }, lang: Lang): string {
@@ -40,7 +46,7 @@ function confidenceText(c: { confidence?: number; confidencePolicy?: string }, l
   return base;
 }
 
-export default function DimensionCard({ dim, lang, compact = false }: Props) {
+export default function DimensionCard({ dim, lang, compact = false, weightValue, onWeightChange }: Props) {
   const t = MESSAGES[lang];
   const [open, setOpen] = useState(false);
 
@@ -50,10 +56,16 @@ export default function DimensionCard({ dim, lang, compact = false }: Props) {
   const checkDefs = new Map(
     (def?.checks ?? []).map((c) => [c.id, c]),
   );
-  const pct = dim.weight === 0 ? 0 : Math.round((dim.score / dim.weight) * 100);
-  const wrapperCls = compact
+  const isDimNotApplicable = dim.notApplicable === true;
+  const pct = dim.score === null || dim.weight === 0
+    ? 0
+    : Math.round((dim.score / dim.weight) * 100);
+  const baseWrapperCls = compact
     ? "rounded-xl ring-1 ring-brand-100 bg-white/75 p-4"
     : "glass rounded-2xl p-5";
+  const wrapperCls = isDimNotApplicable
+    ? `${baseWrapperCls} opacity-65 border border-dashed border-slate-300 bg-slate-50/60`
+    : baseWrapperCls;
 
   return (
     <div className={wrapperCls}>
@@ -62,31 +74,85 @@ export default function DimensionCard({ dim, lang, compact = false }: Props) {
         className="w-full flex items-start justify-between gap-4 text-left"
       >
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg font-semibold">{name}</span>
             <span className="text-[11px] uppercase tracking-wider text-slate-400 font-mono">{dim.id}</span>
+            {isDimNotApplicable && (
+              <span className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 ring-1 ring-slate-300">
+                {lang === "zh" ? "不适用" : "N/A by scope"}
+              </span>
+            )}
           </div>
           {tagline && (
             <p className="mt-1 text-sm text-slate-500 leading-relaxed">{tagline}</p>
           )}
+          {isDimNotApplicable && (
+            <p className="mt-1 text-xs text-slate-400 italic">
+              {lang === "zh"
+                ? "本维度所有细则对当前 skill 类型不适用，权重已按比例分摊到其他维度。"
+                : "All checks in this dimension are out of scope for the current skill type; its weight has been redistributed."}
+            </p>
+          )}
         </div>
         <div className="text-right shrink-0">
-          <div className="text-2xl font-bold tabular-nums">
-            {dim.score.toFixed(1)}
-            <span className="text-sm font-normal text-slate-400"> / {dim.weight}</span>
-          </div>
-          <div className="text-xs text-slate-500">
-            {pct}% · {open ? (lang === "zh" ? "收起" : "hide") : (lang === "zh" ? "展开细则" : "expand")}
-          </div>
+          {isDimNotApplicable ? (
+            <>
+              <div className="text-2xl font-bold tabular-nums text-slate-400">
+                —
+                {dim.originalWeight !== undefined && (
+                  <span className="text-sm font-normal text-slate-400 line-through ml-1">
+                    / {dim.originalWeight}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-slate-400">
+                {lang === "zh" ? "不适用" : "out of scope"}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-2xl font-bold tabular-nums">
+                {(dim.score ?? 0).toFixed(1)}
+                <span className="text-sm font-normal text-slate-400"> / {dim.weight}</span>
+              </div>
+              <div className="text-xs text-slate-500">
+                {pct}% · {open ? (lang === "zh" ? "收起" : "hide") : (lang === "zh" ? "展开细则" : "expand")}
+              </div>
+            </>
+          )}
         </div>
       </button>
 
-      <div className="mt-3 h-1.5 rounded-full bg-brand-100/70 overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-brand-600 to-yellow-300 transition-[width] duration-300"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      {!isDimNotApplicable && (
+        <div className="mt-3 h-1.5 rounded-full bg-brand-100/70 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-brand-600 to-yellow-300 transition-[width] duration-300"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      {onWeightChange && (
+        <div className="mt-3 rounded-lg bg-white/65 ring-1 ring-brand-100 px-3 py-2">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="font-medium text-brand-700">
+              {lang === "zh" ? "子维度权重" : "Dimension weight"}
+            </span>
+            <span className="tabular-nums text-slate-500">
+              {(weightValue ?? dim.weight).toFixed(1)} → {dim.weight.toFixed(1)}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={20}
+            step={0.5}
+            value={weightValue ?? dim.weight}
+            onChange={(e) => onWeightChange(Number(e.target.value))}
+            className="mt-1 w-full accent-brand-500"
+          />
+        </div>
+      )}
 
       {open && (
         <ul className="mt-4 space-y-3">
@@ -95,9 +161,23 @@ export default function DimensionCard({ dim, lang, compact = false }: Props) {
             const criterionTitle = cdef ? (lang === "zh" ? cdef.desc_zh : cdef.desc_en) : c.id;
             const showFix = (c.status === "fail" || c.status === "partial") && !!c.fix;
             const showExample = (c.status === "fail" || c.status === "partial") && !!c.example;
+            const isNotApplicable = c.status === "not_applicable";
+            const liClass = [
+              "rounded-xl p-3",
+              isNotApplicable
+                ? "border border-dashed border-slate-300 bg-slate-50/60 opacity-65"
+                : "ring-1 ring-brand-100/80 bg-white/60",
+            ].join(" ");
+            const statusLabel =
+              c.status === "pass" ? t.statusPass
+                : c.status === "partial" ? t.statusPartial
+                  : c.status === "fail" ? t.statusFail
+                    : isNotApplicable
+                      ? (lang === "zh" ? "不适用" : "N/A by scope")
+                      : t.statusNA;
 
             return (
-              <li key={c.id} className="rounded-xl ring-1 ring-brand-100/80 bg-white/60 p-3">
+              <li key={c.id} className={liClass}>
                 <div className="flex items-start gap-3">
                   <span
                     className={[
@@ -107,10 +187,7 @@ export default function DimensionCard({ dim, lang, compact = false }: Props) {
                     title={c.status}
                   >
                     <span className="font-mono mr-1">{STATUS_ICON[c.status] ?? "·"}</span>
-                    {c.status === "pass" ? t.statusPass
-                      : c.status === "partial" ? t.statusPartial
-                      : c.status === "fail" ? t.statusFail
-                      : t.statusNA}
+                    {statusLabel}
                   </span>
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="text-sm font-medium text-slate-800">{criterionTitle}</div>
@@ -118,6 +195,13 @@ export default function DimensionCard({ dim, lang, compact = false }: Props) {
                       <span className="text-slate-400 mr-1.5">{t.nowLabel}</span>
                       {c.evidence}
                     </div>
+                    {isNotApplicable && (
+                      <div className="text-[11px] text-slate-400 italic">
+                        ↳ {lang === "zh"
+                          ? "已按 applies_to 过滤，不计分母"
+                          : "Filtered by applies_to; excluded from denominator"}
+                      </div>
+                    )}
                     {showFix && (
                       <div className="text-xs text-slate-700 leading-relaxed bg-brand-50/90 rounded-md px-2.5 py-1.5 ring-1 ring-brand-100/70">
                         <span className="text-brand-600 font-medium mr-1.5">{t.fixLabel}</span>

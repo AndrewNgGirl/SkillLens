@@ -19,17 +19,30 @@ import type {
   ScoreReport,
   Suggestion,
 } from "../rubric/types";
+import type { SkillType } from "../llm/types";
+import { resolveSubSkills } from "../spec/sub-skills";
 import { scoreAllRules } from "./rules";
 
 export interface AggregateOptions {
-  /** 子维度级权重覆盖（dimension.id → weight），不传则用 rubric 默认。会归一化到 100。 */
-  weightOverrides?: Record<string, number>;
+  /** 通用版两级权重覆盖：先归一化支柱，再在支柱内归一化子维度。 */
+  weightOverrides?: GeneralWeightOverrides;
   /** LLM 检查项结果（id → CheckResult），未提供则跳过（记 n_a）。 */
   llmResults?: Map<string, CheckResult>;
   /** 改进建议条目数 */
   topSuggestions?: number;
   /** 展示语言：默认跟随 skill，但 Web UI 可强制中文/英文 */
   language?: "zh" | "en";
+  /**
+   * v3.4：用户在 Uploader 上显式选的 skill 结构类型（"auto" / 不传 = 自动检测）。
+   * 决定 ScoreReport 上 skillType / skillTypeAutoDetected / subSkills 的取值，
+   * 让 web 端 dashboard 也能展示 HTML 报告里的 "skill 类型 / 子 SKILL.md" 卡片。
+   */
+  skillType?: SkillType | "auto";
+}
+
+export interface GeneralWeightOverrides {
+  pillars?: Record<string, number>;
+  dimensions?: Record<string, number>;
 }
 
 export function aggregateScore(
@@ -41,7 +54,17 @@ export function aggregateScore(
   const llmResults = opts.llmResults ?? new Map<string, CheckResult>();
   const displayLang = opts.language ?? skill.language;
 
-  const dimensionWeights = normalizeDimensionWeights(rubric, opts.weightOverrides);
+  // Resolve skill structural type up front so applies_to filtering can
+  // happen inside the main scoring loop. Mirrors the CLI's
+  // resolve_skill_type() ordering.
+  const subSkillResolution = resolveSubSkills(skill, opts.skillType);
+  const resolvedSkillType = subSkillResolution.skillType;
+
+  const dimensionWeights = normalizeDimensionWeights(
+    rubric,
+    opts.weightOverrides,
+    resolvedSkillType,
+  );
 
   const pillarResults: PillarResult[] = [];
   let total = 0;
@@ -57,11 +80,66 @@ export function aggregateScore(
 
     for (const dim of pillar.dimensions) {
       const scaledDimWeight = dimensionWeights[dim.id] ?? dim.weight;
+      // Pre-filter checks for effective-weight calc: not_applicable checks
+      // shouldn't dilute the dimension's per-check weight share.
+      const applicableChecks = dim.checks.filter((c) => checkApplies(c, resolvedSkillType));
+      const dimAllNa = applicableChecks.length === 0;
+
+      // Dim entirely filtered out: emit a notApplicable record with weight=0
+      // and score=null so the dim is visible in the report but contributes
+      // nothing to the pillar. The pillar's denominator was already
+      // recomputed inside normalizeDimensionWeights so the remaining dims
+      // pick up the slack — no double counting needed here.
+      if (dimAllNa) {
+        const checksOut: CheckResult[] = dim.checks.map((c) => {
+          const transparency = getCheckTransparency(c);
+          return {
+            id: c.id,
+            type: c.type,
+            status: "not_applicable" as const,
+            evidence: notApplicableEvidence(c, resolvedSkillType, displayLang),
+            ratio: null,
+            weight: c.weight,
+            evidenceSource: transparency.evidenceSource,
+            confidencePolicy: transparency.confidencePolicy,
+            appliesTo: c.applies_to,
+          };
+        });
+        dimsOut.push({
+          id: dim.id,
+          name_zh: dim.name_zh,
+          name_en: dim.name_en,
+          weight: 0,
+          score: null,
+          notApplicable: true,
+          originalWeight: round2(scaledDimWeight),
+          checks: checksOut,
+        });
+        continue;
+      }
+
       pillarWeight += scaledDimWeight;
       let earned = 0;
       let denom = 0;
       const checksOut: CheckResult[] = [];
       for (const c of dim.checks) {
+        if (!checkApplies(c, resolvedSkillType)) {
+          // Partial filter (some applicable, some not): keep the visible
+          // not_applicable row but skip rule/LLM evaluation and earned/denom.
+          const transparency = getCheckTransparency(c);
+          checksOut.push({
+            id: c.id,
+            type: c.type,
+            status: "not_applicable",
+            evidence: notApplicableEvidence(c, resolvedSkillType, displayLang),
+            ratio: null,
+            weight: round2(checkWeightWithinDimension(c, applicableChecks, scaledDimWeight)),
+            evidenceSource: transparency.evidenceSource,
+            confidencePolicy: transparency.confidencePolicy,
+            appliesTo: c.applies_to,
+          });
+          continue;
+        }
         if (c.type === "llm") {
           llmExpectedInPillar++;
           totalLlmExpected++;
@@ -88,7 +166,7 @@ export function aggregateScore(
         const transparency = getCheckTransparency(c);
         const fix = base.fix ?? pickLang(c, "fix", displayLang);
         const example = base.example ?? pickLang(c, "example", displayLang);
-        const effectiveCheckWeight = checkWeightWithinDimension(c, dim.checks, scaledDimWeight);
+        const effectiveCheckWeight = checkWeightWithinDimension(c, applicableChecks, scaledDimWeight);
         checksOut.push({
           ...base,
           weight: round2(effectiveCheckWeight),
@@ -129,6 +207,7 @@ export function aggregateScore(
     let earned = 0;
     let denom = 0;
     for (const c of b.checks) {
+      if (!checkApplies(c, resolvedSkillType)) continue;
       const r =
         c.type === "rule" ? ruleResults.get(c.id) : llmResults.get(c.id);
       if (r && r.ratio !== null) {
@@ -159,7 +238,30 @@ export function aggregateScore(
     entryFile: skill.entryFile,
     generatedAt: new Date().toISOString(),
     llmComplete: totalLlmExpected === 0 || totalLlmEvaluated === totalLlmExpected,
+    skillType: subSkillResolution.skillType,
+    skillTypeAutoDetected: subSkillResolution.autoDetected,
+    subSkills: subSkillResolution.subSkills,
   };
+}
+
+/**
+ * Mirrors CLI's check_applies(): a check declares its scope via the optional
+ * `applies_to` array (e.g. `[atomic, composite]`). Without that field the
+ * check applies universally. Filtered checks become `not_applicable` rows
+ * and are excluded from earned/denom so dimension scores auto-renormalize.
+ */
+function checkApplies(c: CheckDef, skillType: SkillType): boolean {
+  if (!c.applies_to || c.applies_to.length === 0) return true;
+  return c.applies_to.includes(skillType);
+}
+
+/** Localized boilerplate for the not_applicable status row. */
+function notApplicableEvidence(c: CheckDef, skillType: SkillType, lang: "zh" | "en"): string {
+  const scope = (c.applies_to ?? []).join(", ") || "—";
+  if (lang === "zh") {
+    return `对当前 skill 类型 ${skillType} 不适用（仅适用于：${scope}）`;
+  }
+  return `Not applicable for skill_type=${skillType} (scoped to: ${scope})`;
 }
 
 function pickLang(c: CheckDef, kind: "fix" | "example", lang: "zh" | "en"): string | undefined {
@@ -212,23 +314,33 @@ function inferTransparency(c: CheckDef): { evidenceSource: EvidenceSource; confi
 
 function normalizeDimensionWeights(
   rubric: Rubric,
-  overrides?: Record<string, number>,
+  overrides?: GeneralWeightOverrides,
+  skillType?: SkillType,
 ): Record<string, number> {
-  const defaults = Object.fromEntries(
-    rubric.pillars.flatMap((p) => p.dimensions.map((d) => [d.id, d.weight])),
-  ) as Record<string, number>;
-  if (!overrides) {
-    return defaults;
-  }
-  const values = rubric.pillars.flatMap((p) =>
-    p.dimensions.map((d) => Math.max(0, overrides[d.id] ?? d.weight)),
-  );
-  const sum = values.reduce((s, v) => s + v, 0) || 1;
   const scaled: Record<string, number> = {};
+  const rawPillarWeights = rubric.pillars.map((p) => Math.max(0, overrides?.pillars?.[p.id] ?? p.weight));
+  const pillarWeightSum = rawPillarWeights.reduce((s, v) => s + v, 0) || 1;
+
+  // applies_to renormalization: a dim whose checks are *all* filtered out for
+  // this skill_type contributes 0 to the pillar denominator, so the
+  // remaining dims auto-scale to fill the full pillar budget instead of
+  // silently leaking points.
+  const dimAllFiltered = (d: { checks: CheckDef[] }): boolean =>
+    skillType !== undefined && d.checks.every((c) => c.applies_to && !c.applies_to.includes(skillType));
+
   for (const p of rubric.pillars) {
+    const rawPillarWeight = Math.max(0, overrides?.pillars?.[p.id] ?? p.weight);
+    const scaledPillarWeight = (rawPillarWeight / pillarWeightSum) * rubric.total_score;
+    const rawDimensionWeights = p.dimensions.map((d) =>
+      dimAllFiltered(d) ? 0 : Math.max(0, overrides?.dimensions?.[d.id] ?? d.weight),
+    );
+    const dimensionWeightSum = rawDimensionWeights.reduce((s, v) => s + v, 0) || 1;
+
     for (const d of p.dimensions) {
-      const v = Math.max(0, overrides[d.id] ?? d.weight);
-      scaled[d.id] = (v / sum) * rubric.total_score;
+      const rawDimensionWeight = dimAllFiltered(d)
+        ? 0
+        : Math.max(0, overrides?.dimensions?.[d.id] ?? d.weight);
+      scaled[d.id] = (rawDimensionWeight / dimensionWeightSum) * scaledPillarWeight;
     }
   }
   return scaled;

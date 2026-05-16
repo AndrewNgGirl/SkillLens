@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { PillarResult, PillarColor } from "@/lib/rubric/types";
+import type { GeneralWeightOverrides } from "@/lib/scoring/aggregate";
 import type { Lang } from "@/lib/i18n/messages";
 import { MESSAGES } from "@/lib/i18n/messages";
 import { RUBRIC } from "@/lib/rubric/rubric";
@@ -14,6 +15,9 @@ interface Props {
   /** 可选附加内容；总是渲染在 header 之下、子维度之上。
    *  目前用于在 market 支柱里嵌入 GitHub 调研卡片。 */
   extra?: React.ReactNode;
+  weights?: GeneralWeightOverrides;
+  onWeightsChange?: (weights: GeneralWeightOverrides) => void;
+  onResetWeights?: () => void;
 }
 
 const COLOR_RING: Record<PillarColor, string> = {
@@ -45,20 +49,28 @@ const COLOR_PILL: Record<PillarColor, string> = {
   slate:   "bg-stone-100/80 text-stone-700",
 };
 
-export default function PillarSection({ pillar, lang, llmIdle, extra }: Props) {
+export default function PillarSection({ pillar, lang, llmIdle, extra, weights, onWeightsChange, onResetWeights }: Props) {
   const t = MESSAGES[lang];
   const [open, setOpen] = useState(false);
+  const [showNa, setShowNa] = useState(false);
   const def = RUBRIC.pillars.find((p) => p.id === pillar.id);
   const color = (def?.color ?? "slate") as PillarColor;
   const name = lang === "zh" ? pillar.name_zh : pillar.name_en;
   const tagline = def ? (lang === "zh" ? def.tagline_zh : def.tagline_en) : "";
   const role = def ? (lang === "zh" ? def.role_zh : def.role_en) : "";
+  const rawPillarWeight = weights?.pillars?.[pillar.id] ?? def?.weight ?? pillar.weight;
 
   const pct = pillar.weight === 0 ? 0 : Math.round((pillar.score / pillar.weight) * 100);
   const llmTotal = pillar.llmCoverage.total;
   const llmEvaluated = pillar.llmCoverage.evaluated;
   const llmIncomplete = llmTotal > 0 && llmEvaluated < llmTotal;
   const isAwaiting = llmIncomplete && llmIdle;
+
+  // Split applicable vs fully-N/A dims so reviewers see only relevant ones by
+  // default. Fully-N/A dims (filtered out by applies_to for the current
+  // skill_type) are tucked behind a footer toggle so the dashboard stays clean.
+  const applicableDims = pillar.dimensions.filter((d) => !d.notApplicable);
+  const naDims = pillar.dimensions.filter((d) => d.notApplicable);
 
   return (
     <article className={["rounded-2xl ring-1 p-5 transition", COLOR_RING[color]].join(" ")}>
@@ -82,6 +94,47 @@ export default function PillarSection({ pillar, lang, llmIdle, extra }: Props) {
             )}
           </div>
           <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{tagline}</p>
+          {onWeightsChange && (
+            <div className="mt-3 rounded-lg bg-white/65 ring-1 ring-brand-100 px-3 py-2">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="font-medium text-brand-700">
+                  {lang === "zh" ? "支柱权重" : "Pillar weight"}
+                </span>
+                <div className="flex items-center gap-3">
+                  {onResetWeights && (
+                    <button
+                      onClick={onResetWeights}
+                      className="text-[11px] text-brand-600 hover:underline"
+                    >
+                      {lang === "zh" ? "恢复默认" : "Reset"}
+                    </button>
+                  )}
+                  <span className="tabular-nums text-slate-500">
+                    {rawPillarWeight.toFixed(1)} → {pillar.weight.toFixed(1)}
+                  </span>
+                </div>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={50}
+                step={0.5}
+                value={rawPillarWeight}
+                onChange={(e) =>
+                  onWeightsChange({
+                    ...weights,
+                    pillars: { ...(weights?.pillars ?? {}), [pillar.id]: Number(e.target.value) },
+                  })
+                }
+                className="mt-1 w-full accent-brand-500"
+              />
+              <div className="mt-1 text-[11px] text-slate-400">
+                {lang === "zh"
+                  ? "调整支柱会按比例联动下方子维度；右侧为归一化后的有效权重。"
+                  : "Changing the pillar updates dimension impact below; the right value is normalized impact."}
+              </div>
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0">
           {isAwaiting ? (
@@ -115,14 +168,57 @@ export default function PillarSection({ pillar, lang, llmIdle, extra }: Props) {
       >
         {open
           ? (lang === "zh" ? "收起子维度" : "hide dimensions")
-          : (lang === "zh" ? `展开 ${pillar.dimensions.length} 个子维度` : `expand ${pillar.dimensions.length} dimensions`)}
+          : (lang === "zh" ? `展开 ${applicableDims.length} 个子维度` : `expand ${applicableDims.length} dimensions`)}
       </button>
 
       {open && (
         <div className="mt-3 space-y-3">
-          {pillar.dimensions.map((d) => (
-            <DimensionCard key={d.id} dim={d} lang={lang} compact />
+          {applicableDims.map((d) => (
+            <DimensionCard
+              key={d.id}
+              dim={d}
+              lang={lang}
+              compact
+              weightValue={weights?.dimensions?.[d.id] ?? d.weight}
+              onWeightChange={onWeightsChange ? (weight) =>
+                onWeightsChange({
+                  ...weights,
+                  dimensions: { ...(weights?.dimensions ?? {}), [d.id]: weight },
+                }) : undefined}
+            />
           ))}
+
+          {naDims.length > 0 && (
+            <div className="mt-2 border-t border-dashed border-slate-300 pt-3">
+              <button
+                onClick={() => setShowNa(!showNa)}
+                className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-800 select-none"
+              >
+                <span className={`inline-block transition-transform ${showNa ? "rotate-90" : ""}`}>▸</span>
+                <span className="font-medium text-slate-600">
+                  {lang === "zh"
+                    ? `查看 ${naDims.length} 个对当前 skill 类型不适用的维度`
+                    : `Show ${naDims.length} dimension${naDims.length === 1 ? "" : "s"} not applicable to this skill type`}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {lang === "zh" ? "（不影响打分，仅供参考）" : "(does not affect scoring; for reference only)"}
+                </span>
+              </button>
+              {showNa && (
+                <div className="mt-3 space-y-3">
+                  {naDims.map((d) => (
+                    <DimensionCard
+                      key={d.id}
+                      dim={d}
+                      lang={lang}
+                      compact
+                      weightValue={weights?.dimensions?.[d.id] ?? d.weight}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </article>

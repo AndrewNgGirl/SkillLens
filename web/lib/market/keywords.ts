@@ -46,6 +46,9 @@ const DOMAIN_WORDS = new Set([
   "schema","json","yaml","csv","parse","parser","validate","serialize","deserialize",
   // 产品 / 工作流
   "report","dashboard","invoice","summary","analyze","analyzer","summarize","translate","translator",
+  // 金融 / 交易
+  "stock","stocks","trading","trade","trader","market","markets","finance","financial","investment",
+  "portfolio","watchlist","quant","securities","banking","fundraising",
   // 心理 / 测评
   "personality","mbti","myers","briggs","enneagram","tarot","quiz","persona",
   // 情绪 / 表达
@@ -63,6 +66,9 @@ const DOMAIN_WORDS = new Set([
  * 一个足够靠谱的首轮 recall。
  */
 const CHINESE_HINTS: Array<{ pattern: RegExp; phrases: string[] }> = [
+  // 金融 / 投资。放在办公"复盘"之前，避免"盘面复盘/交易复盘"误判成 weekly report。
+  { pattern: /股票|A股|盯盘|涨停|炒股|短线|打板|投资|证券|投研|基金|量化|交易|题材轮动|资金流|个股|板块/i, phrases: ["stock trading", "stock analysis", "market analysis"] },
+
   // 工程 / 开发者工具
   { pattern: /代码评审|代码审查|code\s*review|PR\s*(评审|审查|review)|拉取请求|合并请求/i, phrases: ["code review", "pull request", "reviewdog"] },
   { pattern: /代码生成|生成代码|脚手架|模板生成|组件生成/i, phrases: ["code generator", "scaffold generator", "template generator"] },
@@ -71,7 +77,7 @@ const CHINESE_HINTS: Array<{ pattern: RegExp; phrases: string[] }> = [
   { pattern: /接口文档|API\s*文档|swagger|openapi/i, phrases: ["api documentation", "openapi generator", "swagger documentation"] },
 
   // 文档 / 内容 / 办公
-  { pattern: /周报|日报|月报|工作总结|复盘/i, phrases: ["weekly report", "work summary", "retrospective"] },
+  { pattern: /周报|日报|月报|工作总结|工作复盘|项目复盘|会议复盘/i, phrases: ["weekly report", "work summary", "retrospective"] },
   { pattern: /PPT|幻灯片|演示文稿|路演|slide|slides/i, phrases: ["presentation generator", "slide deck", "html slides"] },
   { pattern: /简历|履历|求职|面试/i, phrases: ["resume builder", "cv generator", "interview assistant"] },
   { pattern: /发票|账单|报价单|收据/i, phrases: ["pdf invoices", "invoice generator", "billing"] },
@@ -79,7 +85,6 @@ const CHINESE_HINTS: Array<{ pattern: RegExp; phrases: string[] }> = [
 
   // 数据 / 分析
   { pattern: /数据分析|表格分析|Excel|CSV|可视化|图表/i, phrases: ["data analysis", "csv analysis", "chart generator"] },
-  { pattern: /股票|A股|盯盘|涨停|投资|基金|量化/i, phrases: ["stock analysis", "trading assistant", "market analysis"] },
   { pattern: /舆情|竞品分析|市场调研|行业分析/i, phrases: ["market research", "competitor analysis", "sentiment analysis"] },
 
   // 学习 / 心理 / 情绪表达
