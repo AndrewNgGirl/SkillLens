@@ -14,12 +14,21 @@ It is designed for people building skills for Cursor, Claude, OpenClaw, or simil
 
 ## Capability Map
 
-| Capability | Entry Point | For | Notes |
-|---|---|---|---|
-| General quantitative review | Web UI / CLI | All skill authors | 5 pillars, 100-point score; sub-dimensions are activated per skill structure (atomic / pipeline / composite) |
-| SkillLens Deep Review | Web UI / Agent CLI | Teams that need LLM judgment | LLM evaluates subjective checks; deterministic rules still come from the official scorer |
-| Finance Expert Review | Web UI / Agent CLI | Finance, research, quant, banking, and education scenarios | Adds a `domainExpert` overlay without replacing the general score |
-| Agent-side official review | CLI | Cursor / WorkBuddy / Hermes and similar code agents | `--agent-wizard` guides mode selection and certificate-based verification |
+SkillLens is built from three orthogonal axes that compose freely — pick what fits your situation:
+
+- **What to evaluate** (review lens)
+  - **General review**: 5 pillars on a 100-point scale; sub-dimensions activate per skill structure (atomic / pipeline / composite).
+  - **Finance Expert Review** (overlay): adds a `domainExpert` score on top of the general report, covering fundraising, quant, stock trading, securities research, banking workflow, financial education, and more.
+
+- **How deep** (evaluation depth)
+  - **Rule-only preview**: deterministic checks (pass / partial / fail / not_applicable), returns in seconds, no LLM credits spent.
+  - **SkillLens Deep Review**: LLM evaluates subjective dimensions on top of the rule-only results; deterministic rules still come from the official scorer so the LLM cannot rewrite them.
+
+- **Who calls it** (entry point)
+  - **Web UI**: for humans — drag-and-drop upload, visual report.
+  - **Agent CLI**: for code agents (Cursor, WorkBuddy, Hermes, etc.) — `--agent-wizard` walks the user through mode selection, and `deepReviewCertificate` cryptographically prevents the agent from fabricating scores.
+
+The three axes mix freely. For example *CLI + Finance Expert + Deep Review*: run `--agent-wizard`, pick finance and a scenario, let the code agent's own model do the heavy lifting, and end up with an agent-side full Deep Review whose JSON carries both `domainExpert.score` and a verified certificate.
 
 ## Why It Is Worth Trying
 

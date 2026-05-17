@@ -14,12 +14,21 @@ SkillLens 是一个开源、自托管的 Web 工具，用来评测 **Agent Skill
 
 ## 当前能力地图
 
-| 能力 | 入口 | 适合谁 | 说明 |
-|---|---|---|---|
-| 通用量化评测 | Web UI / CLI | 所有 skill 作者 | 5 大支柱、100 分制总分；按 skill 结构（atomic / pipeline / composite）启用差异化子维度 |
-| SkillLens Deep Review | Web UI / Agent CLI | 需要 LLM 深度判断的团队 | LLM 只评估主观项，规则项仍由官方 scorer 决定 |
-| 金融专家版 | Web UI / Agent CLI | 金融、投研、量化、银行、投教场景 | 在通用总分之外增加 `domainExpert` 专业附加报告 |
-| Agent-side 官方评测 | CLI | Cursor / WorkBuddy / Hermes 等 code agent | 通过 `--agent-wizard` 引导选择版本，并用证书确认结果可信 |
+SkillLens 的能力由三个正交维度组合而成，按需挑选即可：
+
+- **评什么**（评测视角）
+  - **通用评测**：5 大支柱、100 分制；按 skill 结构（atomic / pipeline / composite）启用差异化子维度
+  - **金融专家版**（可叠加）：在通用总分之外，针对金融场景额外输出 `domainExpert` 专家分，覆盖投融资、量化、炒股、证券、银行、投教等
+
+- **多深**（评测深度）
+  - **规则分预览**：确定性检查（pass / partial / fail / not_applicable），秒级返回，不耗 LLM 额度
+  - **SkillLens Deep Review**：在规则分之上，由 LLM 评估主观维度；规则项仍由官方 scorer 决定，避免 LLM 自由发挥
+
+- **谁来用**（调用入口）
+  - **Web UI**：给人用——浏览器拖拽上传，可视化报告
+  - **Agent CLI**：给 code agent 用（Cursor / WorkBuddy / Hermes 等）——`--agent-wizard` 引导选择，并通过 `deepReviewCertificate` 证书校验避免 agent 编造分数
+
+三个维度可任意组合。例如 *CLI + 金融专家版 + Deep Review*：跑 `--agent-wizard` 选择金融并指定场景，由 code agent 自己的模型完成完整的 agent-side 金融专家深度评测，最终 JSON 含 `domainExpert.score` 与 verified 证书。
 
 ## 最值得一试的地方
 
