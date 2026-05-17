@@ -87,6 +87,32 @@ Two independent shifts land together. **First**, the rubric is now skill-type-aw
 
 # 更新日志
 
+## 0.4.1 — 真双语 Deep Review
+
+修复 HTML 报告里一个长期存在的错位：之前的中英切换只切 UI 标签（pillar 名、维度 tag、状态徽章），而 LLM 生成的 `evidence` 和 `fix` 文本一直停留在 LLM 当时被要求输出的那一种语言里。因此默认中文界面的读者在金融专家版里仍会看到大量英文诊断——因为金融专家版的支柱 100% 由 LLM 评估。
+
+### 亮点
+
+- **LLM 输出默认双语**。agent-side Deep Review prompt 现在要求 LLM 为每条结果同时输出中英两份（`evidence_zh` + `evidence_en`、`fix_zh` + `fix_en`、`value_type_reason_zh` + `value_type_reason_en`）。HTML 报告的中英切换现在真正切换正文，而不仅是标签。
+- **不破坏旧报告**。`score.py --llm-results` 仍接受单语 LLM JSON（旧 `evidence` / `fix`）；CLI 会把它镜像到两种语言，旧报告继续可渲染。`evidence` 和 `fix` 仍保留在输出 schema 里，作为主语言别名。
+- **token 预算逃生通道**。加 `--llm-language zh` 或 `--llm-language en` 强制单语输出（约省一半 LLM 输出 token）。HTML 报告两个 pane 都会回退到所选语言。
+
+### 新增功能
+
+- 每个 check 新增 JSON 字段：`evidence_zh`、`evidence_en`，以及（存在 fix 时）`fix_zh`、`fix_en`。`evidence` / `fix` 仍保留，默认等同英文版本，供向后兼容的下游消费方使用。
+- `llmMeta` 新增字段：`value_type_reason_zh`、`value_type_reason_en`。旧 `value_type_reason` 保留。
+- `suggestions` 与 `domainExpert.suggestions` 中的每一条建议新增字段：`title_zh`、`title_en`、`why_zh`、`why_en`、`how_zh`、`how_en`。旧 `title` / `why` / `how` 保留（值为主语言）。
+- `--llm-language {auto,bilingual,zh,en}` —— `auto` 现在等同 `bilingual`（旧语义是"跟随 SKILL.md 源语言"）。`--help` 已同步说明。
+- `engineVersion` 升到 `0.4.1`。
+- `render_report.py` 优先读 `<field>_<lang>`，缺失时回退到旧 `<field>`，同一个 renderer 同时透明处理新旧两套 JSON。
+- Markdown 导出（`*-report.md`）也已支持双语。
+
+### 迁移说明
+
+- **用新 CLI 重跑现有 skill**：照常跑三步流程（`--agent-prompt` → LLM 产出 JSON → `--llm-results`）。新 prompt 自动要求 LLM 双语输出，新 merge 步骤端到端保留。
+- **复用旧 `agent-llm-results.json`**：开箱即用；报告会在两个 pane 显示同一份单语内容（优雅降级）。
+- **第三方 JSON 消费方**：可继续读 `evidence` / `fix`；准备好后切换到 `evidence_zh` / `evidence_en` 即可启用双语。
+
 ## 0.4.0 — 类型感知评分标准 & 可分享离线报告
 
 这一版同时落地两件相对独立的事。**其一**，评分标准（rubric）改为 skill 类型感知：pipeline 编排器与 composite 工具集不再被按 atomic 单体 skill 评分，报告不再出现"在根 SKILL.md 里把 schema 重写一遍"这种类型错配建议，转而问每种形态真正应该回答的问题。**其二**，CLI 现在能一键产出可分享的离线报告——JSON、GitHub-flavored Markdown，再加一份视觉对齐 Web UI、浏览器 Cmd+P 即可导出 PDF 的自包含 HTML——评测结果不必再起 web 应用就能直接分发。
