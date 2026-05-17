@@ -65,19 +65,45 @@ python3 skills/skill-scorer/scripts/score.py --llm-results agent-llm-results.jso
       "id": "business_value",
       "score": 0-25,
       "dimensions": [
-        { "id": "...", "checks": [{ "id": "...", "status": "pass|partial|fail|n_a", "evidence": "..." }] }
+        {
+          "id": "...",
+          "checks": [
+            {
+              "id": "...",
+              "status": "pass|partial|fail|n_a",
+              "evidence":    "<primary-language alias>",
+              "evidence_zh": "中文现状",
+              "evidence_en": "English diagnosis",
+              "fix":    "<primary-language alias>",
+              "fix_zh": "中文改法",
+              "fix_en": "English fix"
+            }
+          ]
+        }
       ]
     }
   ],
   "bonus": 0-5,
   "suggestions": [
-    { "title": "Top 改进项", "why": "现状", "how": "改法" }
+    {
+      "title": "Top 改进项",
+      "title_zh": "中文 Top 改进项",
+      "title_en": "English Top Improvement",
+      "why":    "现状",
+      "why_zh": "中文现状",
+      "why_en": "English why",
+      "how":    "改法",
+      "how_zh": "中文改法",
+      "how_en": "English how"
+    }
   ],
   "deepReviewCertificate": {
     "status": "verified"
   }
 }
 ```
+
+`evidence_zh` + `evidence_en` (and `fix_zh` + `fix_en`, `why_zh` + `why_en`, `how_zh` + `how_en`, `title_zh` + `title_en`) are the canonical bilingual fields ≥ engineVersion 0.4.1. The unsuffixed `evidence` / `fix` / `why` / `how` / `title` are preserved as back-compat aliases pointing at the primary language so older readers keep working. The HTML report's ZH/EN toggle uses the suffixed fields to switch body content; falls back to the bare field when the JSON predates the bilingual schema.
 
 ## Workflow
 
@@ -92,7 +118,7 @@ python3 skills/skill-scorer/scripts/score.py --llm-results agent-llm-results.jso
 4. **Agent-side Deep Review when requested**：如需完整深度评测，必须先运行 `--agent-prompt` 生成官方提示词，用当前 code agent 的模型返回严格 JSON，再运行 `--llm-results` 合并。领域专家版必须在两步命令都带上相同的 `--domain` / `--scenario`。
 5. **Use official JSON only**：总分、等级、pillar/dimension/check 分数必须来自官方 CLI 最终 JSON 输出，不能由 Agent 自己重算或补满。
 6. **Verify certificate**：完整 Deep Review 必须包含 `deepReviewCertificate.status="verified"`；金融专家版还必须包含 `domainExpert` 和 `deepReviewCertificate.domain`；没有证书只能称为规则分预览或非官方结果。
-7. **Render**：按 skill 语言（zh / en）把官方 JSON 渲染成 Markdown 报告；Top 改进项必须来自 JSON 的 `suggestions` 或对应 check 的 `fix_zh/fix_en`。
+7. **Render**：按用户阅读语言（zh / en）从 JSON 取双语字段（`evidence_zh` + `evidence_en`, `fix_zh` + `fix_en`, `why_zh` + `why_en`, `how_zh` + `how_en`）渲染报告；Top 改进项必须来自 JSON 的 `suggestions`，旧版单语 JSON 可回退到 `evidence` / `fix` / `why` / `how`。
 
 ## Official Tool Contract
 

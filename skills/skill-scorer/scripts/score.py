@@ -43,7 +43,7 @@ import render_report  # noqa: E402  # type: ignore[import-not-found]
 RUBRIC_PATH = Path(__file__).parent.parent / "rubric" / "rubric.yaml"
 DOMAINS_DIR = Path(__file__).parent.parent / "domains"
 ENGINE_NAME = "skilllens-python-cli"
-ENGINE_VERSION = "0.3.0"
+ENGINE_VERSION = "0.4.1"
 VALUE_TYPES = {"productivity", "decision_support", "learning", "emotion_expression", "utility"}
 
 
@@ -390,11 +390,76 @@ def check_applies(c: dict, skill_type: str) -> bool:
 
 
 def not_applicable_evidence(c: dict, skill_type: str, lang: str = "en") -> str:
-    """Human-readable reason for a skipped check."""
+    """Human-readable reason for a skipped check (single-language, legacy)."""
     scope = c.get("applies_to") or []
     if lang == "zh":
         return f"对 skill_type={skill_type} 不适用（仅适用于 {', '.join(scope)}）"
     return f"Not applicable for skill_type={skill_type} (scoped to {', '.join(scope)})"
+
+
+def not_applicable_evidence_bilingual(c: dict, skill_type: str) -> dict:
+    """Bilingual not_applicable evidence so the ZH/EN toggle works in HTML."""
+    scope = c.get("applies_to") or []
+    scope_text = ", ".join(scope)
+    return {
+        "evidence_zh": f"对 skill_type={skill_type} 不适用(仅适用于 {scope_text or '—'})",
+        "evidence_en": f"Not applicable for skill_type={skill_type} (scoped to {scope_text or '—'})",
+    }
+
+
+def rule_evidence_bilingual(evidence_en: str) -> dict:
+    """Wrap a rule-engine English evidence string into both languages.
+
+    Rule-class checks (run_rule) emit short, technical, language-neutral
+    strings like "all present: ['name', 'description']" or "12345 chars". We
+    keep the original English text in both panes — translating numerical /
+    enumerative diagnostics adds no value and risks subtle errors. The few
+    fully-prose rule evidences (e.g. "scripts/ directory present") read fine
+    next to Chinese UI labels and remain unambiguous.
+    """
+    return {"evidence_zh": evidence_en, "evidence_en": evidence_en}
+
+
+def _assemble_check_out(
+    c: dict,
+    *,
+    status: str,
+    ratio: float | None,
+    evidence_zh: str,
+    evidence_en: str,
+    fix_zh: str = "",
+    fix_en: str = "",
+    confidence: float | None = None,
+    extra: dict | None = None,
+) -> dict:
+    """Build a single check_out dict with bilingual evidence/fix + back-compat.
+
+    The legacy `evidence` and `fix` keys are populated so older consumers
+    (web preview, third-party renderers, the user's own tooling) keep
+    working. The HTML report renderer prefers `evidence_zh` / `evidence_en`
+    when present and falls back to `evidence`.
+    """
+    transparency = check_transparency(c)
+    out = {
+        "id": c["id"],
+        "type": c["type"],
+        "status": status,
+        "evidence": evidence_en or evidence_zh,
+        "evidence_zh": evidence_zh,
+        "evidence_en": evidence_en,
+        "weight": c["weight"],
+        "ratio": ratio,
+        **transparency,
+    }
+    if fix_zh or fix_en:
+        out["fix"] = fix_en or fix_zh
+        out["fix_zh"] = fix_zh
+        out["fix_en"] = fix_en
+    if confidence is not None:
+        out["confidence"] = confidence
+    if extra:
+        out.update(extra)
+    return out
 
 
 def check_transparency(c: dict) -> dict:
@@ -422,19 +487,26 @@ def check_transparency(c: dict) -> dict:
 
 
 SKILL_TYPE_CHOICES = ("auto", "atomic", "pipeline", "composite")
-LLM_LANGUAGE_CHOICES = ("auto", "zh", "en")
+LLM_LANGUAGE_CHOICES = ("auto", "bilingual", "zh", "en")
 
 
 def resolve_llm_language(skill_lang: str, requested: str | None) -> str:
     """Decide the language LLM should use for evidence / fix / value_type_reason.
 
-    'auto' (default) follows the skill's detected language so a Chinese
-    SKILL.md gets Chinese feedback and an English one gets English. An
-    explicit 'zh' or 'en' overrides this — useful when reviewers want a
-    Chinese report on an English skill, etc.
+    Returns one of: 'bilingual' | 'zh' | 'en'.
+
+    - 'auto' (default) and 'bilingual' both produce bilingual output: the LLM
+      writes evidence_zh + evidence_en (and fix_zh + fix_en, etc.) for every
+      check. This is the recommended setting because the HTML report has a
+      ZH/EN toggle, and only bilingual content makes the toggle actually
+      switch the body content (not just labels). The extra output cost is
+      small (evidence ≤ 100 words × 2 per check).
+    - 'zh' / 'en' force single-language output. Useful when the reviewer only
+      reads one language and wants to halve LLM output tokens. The renderer
+      will fall back to the single language in both panes.
     """
-    if not requested or requested == "auto":
-        return "zh" if skill_lang == "zh" else "en"
+    if not requested or requested == "auto" or requested == "bilingual":
+        return "bilingual"
     if requested not in LLM_LANGUAGE_CHOICES:
         raise ValueError(f"invalid llm_language: {requested}; expected one of {LLM_LANGUAGE_CHOICES}")
     return requested
@@ -505,14 +577,12 @@ def score_skill(
                 # before doing any rule/LLM work. Emit a visible "not_applicable"
                 # entry so the report can show which checks were filtered.
                 if not check_applies(c, resolved_type):
-                    transparency = check_transparency(c)
-                    checks_out.append({
-                        "id": c["id"], "type": c["type"], "status": "not_applicable",
-                        "evidence": not_applicable_evidence(c, resolved_type, skill.language),
-                        "weight": c["weight"], "ratio": None,
-                        "appliesTo": list(c.get("applies_to") or []),
-                        **transparency,
-                    })
+                    na = not_applicable_evidence_bilingual(c, resolved_type)
+                    checks_out.append(_assemble_check_out(
+                        c, status="not_applicable", ratio=None,
+                        evidence_zh=na["evidence_zh"], evidence_en=na["evidence_en"],
+                        extra={"appliesTo": list(c.get("applies_to") or [])},
+                    ))
                     continue
                 applicable_check_count += 1
                 if c["type"] == "llm":
@@ -521,29 +591,32 @@ def score_skill(
                 if c["type"] == "rule":
                     status, evidence = run_rule(c["id"], skill, rubric)
                     ratio = STATUS_SCORE[status]
-                    fix = None
+                    evidence_zh = evidence_en = evidence
+                    fix_zh = fix_en = ""
                     confidence = None
                 else:
                     llm_result = llm_results.get(c["id"])
                     if llm_result:
                         status = llm_result["status"]
-                        evidence = llm_result["evidence"]
+                        evidence_zh = llm_result.get("evidence_zh") or llm_result.get("evidence", "")
+                        evidence_en = llm_result.get("evidence_en") or llm_result.get("evidence", "")
                         ratio = llm_result["ratio"]
-                        fix = llm_result.get("fix")
+                        fix_zh = llm_result.get("fix_zh") or llm_result.get("fix", "")
+                        fix_en = llm_result.get("fix_en") or llm_result.get("fix", "")
                         confidence = llm_result.get("confidence")
                     else:
-                        status, evidence = "n_a", "LLM check (skipped in CLI)"
+                        status = "n_a"
+                        evidence_zh = "LLM 检查项(CLI 中已跳过)"
+                        evidence_en = "LLM check (skipped in CLI)"
                         ratio = None
-                        fix = None
+                        fix_zh = fix_en = ""
                         confidence = None
-                transparency = check_transparency(c)
-                check_out = {"id": c["id"], "type": c["type"], "status": status,
-                             "evidence": evidence, "weight": c["weight"], "ratio": ratio, **transparency}
-                if fix:
-                    check_out["fix"] = fix
-                if confidence is not None:
-                    check_out["confidence"] = confidence
-                checks_out.append(check_out)
+                checks_out.append(_assemble_check_out(
+                    c, status=status, ratio=ratio,
+                    evidence_zh=evidence_zh, evidence_en=evidence_en,
+                    fix_zh=fix_zh, fix_en=fix_en,
+                    confidence=confidence,
+                ))
                 if c["type"] == "llm" and ratio is not None:
                     llm_eval_in_pillar += 1
                     llm_evaluated += 1
@@ -591,14 +664,12 @@ def score_skill(
         llm_eval_in_bonus = 0
         for c in bonus.get("checks", []):
             if not check_applies(c, resolved_type):
-                transparency = check_transparency(c)
-                checks_out.append({
-                    "id": c["id"], "type": c["type"], "status": "not_applicable",
-                    "evidence": not_applicable_evidence(c, resolved_type, skill.language),
-                    "weight": c["weight"], "ratio": None,
-                    "appliesTo": list(c.get("applies_to") or []),
-                    **transparency,
-                })
+                na = not_applicable_evidence_bilingual(c, resolved_type)
+                checks_out.append(_assemble_check_out(
+                    c, status="not_applicable", ratio=None,
+                    evidence_zh=na["evidence_zh"], evidence_en=na["evidence_en"],
+                    extra={"appliesTo": list(c.get("applies_to") or [])},
+                ))
                 continue
             if c["type"] == "llm":
                 llm_in_bonus += 1
@@ -606,29 +677,32 @@ def score_skill(
             if c["type"] == "rule":
                 status, evidence = run_rule(c["id"], skill, rubric)
                 ratio = STATUS_SCORE[status]
-                fix = None
+                evidence_zh = evidence_en = evidence
+                fix_zh = fix_en = ""
                 confidence = None
             else:
                 llm_result = llm_results.get(c["id"])
                 if llm_result:
                     status = llm_result["status"]
-                    evidence = llm_result["evidence"]
+                    evidence_zh = llm_result.get("evidence_zh") or llm_result.get("evidence", "")
+                    evidence_en = llm_result.get("evidence_en") or llm_result.get("evidence", "")
                     ratio = llm_result["ratio"]
-                    fix = llm_result.get("fix")
+                    fix_zh = llm_result.get("fix_zh") or llm_result.get("fix", "")
+                    fix_en = llm_result.get("fix_en") or llm_result.get("fix", "")
                     confidence = llm_result.get("confidence")
                 else:
-                    status, evidence = "n_a", "LLM check (skipped in CLI)"
+                    status = "n_a"
+                    evidence_zh = "LLM 检查项(CLI 中已跳过)"
+                    evidence_en = "LLM check (skipped in CLI)"
                     ratio = None
-                    fix = None
+                    fix_zh = fix_en = ""
                     confidence = None
-            transparency = check_transparency(c)
-            check_out = {"id": c["id"], "type": c["type"], "status": status,
-                         "evidence": evidence, "weight": c["weight"], "ratio": ratio, **transparency}
-            if fix:
-                check_out["fix"] = fix
-            if confidence is not None:
-                check_out["confidence"] = confidence
-            checks_out.append(check_out)
+            checks_out.append(_assemble_check_out(
+                c, status=status, ratio=ratio,
+                evidence_zh=evidence_zh, evidence_en=evidence_en,
+                fix_zh=fix_zh, fix_en=fix_en,
+                confidence=confidence,
+            ))
             if c["type"] == "llm" and ratio is not None:
                 llm_eval_in_bonus += 1
                 llm_evaluated += 1
@@ -722,20 +796,56 @@ def normalize_llm_payload(
         if not isinstance(raw, dict):
             raise ValueError(f"llm result for {check_id} must be an object")
         ratio = clamp01(raw.get("ratio"))
-        evidence = str(raw.get("evidence") or "").strip()[:400]
-        if not evidence:
-            raise ValueError(f"llm result for {check_id} missing evidence")
+        # Bilingual + legacy back-compat: accept any of
+        #   evidence_zh / evidence_en (preferred, post-0.5.0)
+        #   evidence (legacy single-language)
+        # and fill missing language(s) by mirroring whichever is present so the
+        # report renderer can always pick the current pane's language without
+        # crashing on missing keys.
+        evidence_zh = str(raw.get("evidence_zh") or "").strip()[:400]
+        evidence_en = str(raw.get("evidence_en") or "").strip()[:400]
+        evidence_legacy = str(raw.get("evidence") or "").strip()[:400]
+        if not (evidence_zh or evidence_en or evidence_legacy):
+            raise ValueError(
+                f"llm result for {check_id} missing evidence "
+                f"(expected evidence_zh / evidence_en / evidence)"
+            )
+        if not evidence_zh:
+            evidence_zh = evidence_legacy or evidence_en
+        if not evidence_en:
+            evidence_en = evidence_legacy or evidence_zh
+
+        fix_zh = str(raw.get("fix_zh") or "").strip()[:500]
+        fix_en = str(raw.get("fix_en") or "").strip()[:500]
+        fix_legacy = str(raw.get("fix") or "").strip()[:500]
+        if fix_zh or fix_en or fix_legacy:
+            if not fix_zh:
+                fix_zh = fix_legacy or fix_en
+            if not fix_en:
+                fix_en = fix_legacy or fix_zh
+        # else: leave fix_zh / fix_en empty — caller treats absent fix as None.
+
         confidence_raw = raw.get("confidence")
         confidence = clamp01(confidence_raw) if confidence_raw is not None else None
-        ratio = normalize_ratio(check_id, ratio, evidence, confidence)
+        # Use evidence_en (or whichever is non-empty) for the calibration
+        # heuristic — it doesn't matter which language we hash on; the
+        # ratio_normalizer only cares about emptiness / fabrication markers.
+        ratio = normalize_ratio(check_id, ratio, evidence_en or evidence_zh, confidence)
         out = {
             "ratio": ratio,
             "status": ratio_to_status(ratio),
-            "evidence": evidence,
+            # `evidence` / `fix` legacy fields are populated for back-compat
+            # consumers (web preview, older renderers). Default to the English
+            # version, but downstream score_skill picks the language pair to
+            # serialize via report.language.
+            "evidence": evidence_en or evidence_zh,
+            "evidence_zh": evidence_zh,
+            "evidence_en": evidence_en,
         }
-        fix = str(raw.get("fix") or "").strip()[:500]
-        if fix:
-            out["fix"] = fix
+        if fix_zh or fix_en:
+            out["fix"] = fix_en or fix_zh
+            out["fix_zh"] = fix_zh
+            out["fix_en"] = fix_en
         if confidence is not None:
             out["confidence"] = confidence
         normalized[check_id] = out
@@ -744,12 +854,20 @@ def normalize_llm_payload(
     meta = None
     if isinstance(raw_meta, dict):
         vt = str(raw_meta.get("value_type") or "").strip()
-        reason = str(raw_meta.get("value_type_reason") or "").strip()[:200]
+        reason_zh = str(raw_meta.get("value_type_reason_zh") or "").strip()[:240]
+        reason_en = str(raw_meta.get("value_type_reason_en") or "").strip()[:240]
+        reason_legacy = str(raw_meta.get("value_type_reason") or "").strip()[:240]
+        if not reason_zh:
+            reason_zh = reason_legacy or reason_en
+        if not reason_en:
+            reason_en = reason_legacy or reason_zh
         meta = {}
         if vt in VALUE_TYPES:
             meta["value_type"] = vt
-        if reason:
-            meta["value_type_reason"] = reason
+        if reason_zh or reason_en:
+            meta["value_type_reason"] = reason_en or reason_zh
+            meta["value_type_reason_zh"] = reason_zh
+            meta["value_type_reason_en"] = reason_en
         if not meta:
             meta = None
     return normalized, meta
@@ -828,37 +946,52 @@ def score_domain_expert(domain_cfg: dict, llm_results: dict[str, dict], scenario
                 evaluated += 1
                 ratio = result["ratio"]
                 status = result["status"]
-                evidence = result["evidence"]
-                fix = result.get("fix")
+                evidence_zh = result.get("evidence_zh") or result.get("evidence", "")
+                evidence_en = result.get("evidence_en") or result.get("evidence", "")
+                fix_zh = result.get("fix_zh") or result.get("fix", "")
+                fix_en = result.get("fix_en") or result.get("fix", "")
                 confidence = result.get("confidence")
                 earned += ratio * c["weight"]
                 denom += c["weight"]
             else:
                 ratio = None
                 status = "n_a"
-                evidence = "LLM check (skipped in CLI)"
-                fix = None
+                evidence_zh = "LLM 检查项(CLI 中已跳过)"
+                evidence_en = "LLM check (skipped in CLI)"
+                fix_zh = fix_en = ""
                 confidence = None
             item = {
                 "id": c["id"],
                 "status": status,
                 "weight": c["weight"],
                 "ratio": ratio,
-                "evidence": evidence,
+                "evidence": evidence_en or evidence_zh,
+                "evidence_zh": evidence_zh,
+                "evidence_en": evidence_en,
             }
-            if fix:
-                item["fix"] = fix
+            if fix_zh or fix_en:
+                item["fix"] = fix_en or fix_zh
+                item["fix_zh"] = fix_zh
+                item["fix_en"] = fix_en
             if confidence is not None:
                 item["confidence"] = confidence
             checks_out.append(item)
             if status in {"fail", "partial"}:
+                default_fix_zh = "补充可验证的金融证据、边界和风控流程"
+                default_fix_en = "Add verifiable finance evidence, boundaries, and risk controls"
                 suggestions.append({
                     "checkId": c["id"],
                     "pillarId": pillar["id"],
                     "severity": "high" if status == "fail" else "medium",
                     "title": c.get("desc_zh" if lang == "zh" else "desc_en", c["id"]),
-                    "why": evidence,
-                    "how": fix or ("补充可验证的金融证据、边界和风控流程" if lang == "zh" else "Add verifiable finance evidence, boundaries, and risk controls"),
+                    "title_zh": c.get("desc_zh", c["id"]),
+                    "title_en": c.get("desc_en", c["id"]),
+                    "why": evidence_en if lang == "en" else evidence_zh,
+                    "why_zh": evidence_zh,
+                    "why_en": evidence_en,
+                    "how": (fix_en or fix_zh) if lang == "en" else (fix_zh or default_fix_zh),
+                    "how_zh": fix_zh or default_fix_zh,
+                    "how_en": fix_en or default_fix_en,
                     "weight": c["weight"],
                 })
         pillar_score = (earned / denom) * pillar["weight"] if denom else 0.0
@@ -1118,27 +1251,56 @@ This is an **atomic / single-purpose skill** — one SKILL.md doing one thing. A
 
 
 def render_language_block(output_lang: str) -> str:
-    """Tell the LLM which language to write evidence / fix / reason in.
+    """Tell the LLM which language(s) to write evidence / fix / reason in.
 
-    Without this signal the LLM tends to mirror the SKILL.md's language —
-    which means an English skill yields English feedback that then has to be
-    translated for a Chinese reader (and vice versa). Pinning the output
-    language explicitly removes that ambiguity for the reviewer reading the
-    final report.
+    Three modes:
+    - 'bilingual' (default): emit BOTH `evidence_zh` + `evidence_en` (and `fix_zh`
+      + `fix_en`, `value_type_reason_zh` + `value_type_reason_en`). The HTML
+      report's ZH/EN toggle then switches body content, not just labels.
+    - 'zh' / 'en': single-language output, with the corresponding suffix
+      (`evidence_zh` only OR `evidence_en` only). The CLI will mirror it into
+      the legacy `evidence` field for back-compat consumers, and the other-lang
+      pane will fall back to the same content.
     """
+    if output_lang == "bilingual":
+        return """## 输出语言要求 / Output language
+为了让 SkillLens HTML 报告的中英双语切换真正切换正文(不仅是 UI 标签),你必须为每条结果同时给出中文和英文两份内容。
+For the SkillLens HTML report's ZH/EN toggle to actually switch body content (not just UI labels), you MUST provide BOTH Chinese and English versions for every result.
+
+强制 JSON 字段名 / Required JSON field names:
+- 每个 `results.<check.id>` 中: `evidence_zh`、`evidence_en`、`fix_zh`、`fix_en`(不再使用单独的 `evidence` / `fix`)。
+- `meta` 中: `value_type_reason_zh`、`value_type_reason_en`(不再使用单独的 `value_type_reason`)。
+- For each `results.<check.id>`: `evidence_zh`, `evidence_en`, `fix_zh`, `fix_en` (do NOT emit a single `evidence` / `fix`).
+- In `meta`: `value_type_reason_zh`, `value_type_reason_en` (do NOT emit a single `value_type_reason`).
+
+两份内容必须是同一判断的两种表达 / The two versions must express the same judgment:
+- 不是简单的逐字翻译;允许结合中英读者习惯调整措辞,但事实、扣分点、证据引用必须完全一致。
+- 引用 SKILL.md / 子 SKILL.md 中的专有名词(API、JSON、schema、Pydantic、ASC 220、CECL、ROU、PR 等)、文件路径、命令、变量名,在中文与英文里都保持原文,不要翻译。
+- 检查项 ID(JSON key 中的 `<check.id>`)保持英文原样。
+- Not a literal token-by-token translation; you may adjust phrasing for each audience, but the facts, deductions, and evidence references must match exactly.
+- Keep proper nouns (API, JSON, schema, Pydantic, ASC 220, CECL, ROU, PR, etc.), file paths, command names, and variable names in their original form in BOTH languages.
+- Keep check IDs (the JSON keys) untranslated.
+
+长度限制 / Length budget:
+- `evidence_zh` ≤ 100 字,`evidence_en` ≤ 80 words。
+- `fix_zh` ≤ 120 字,`fix_en` ≤ 100 words。
+- `value_type_reason_zh` ≤ 60 字,`value_type_reason_en` ≤ 40 words。
+"""
     if output_lang == "zh":
         return """## 输出语言要求
-请用**简体中文**填写 `evidence`、`fix`、`value_type_reason` 字段。
-- 即使被测 SKILL.md 正文、附属文件或 frontmatter 是英文，仍然用简体中文回答。
-- 检查项 ID（JSON key 中的 `<check.id>`）保持英文原样，不要翻译。
-- 专有名词（API、JSON、schema、Pydantic 等）、文件路径、命令名保持原文。
-- 引用 SKILL.md / 子 SKILL.md 中的英文术语时，可在中文里直接保留原文（不需要翻译为生硬的中文）。
+请用**简体中文**填写 `evidence_zh`、`fix_zh`、`value_type_reason_zh` 字段(注意是 `_zh` 后缀字段,不要用裸 `evidence` / `fix`)。
+- 即使被测 SKILL.md 正文、附属文件或 frontmatter 是英文,仍然用简体中文回答。
+- 检查项 ID(JSON key 中的 `<check.id>`)保持英文原样,不要翻译。
+- 专有名词(API、JSON、schema、Pydantic 等)、文件路径、命令名保持原文。
+- 引用 SKILL.md / 子 SKILL.md 中的英文术语时,可在中文里直接保留原文(不需要翻译为生硬的中文)。
+- 不需要输出 `_en` 版本(将由 CLI 用 `_zh` 内容回填到英文 pane)。
 """
     return """## Output language
-Write the `evidence`, `fix`, and `value_type_reason` fields in **English**.
+Write the `evidence_en`, `fix_en`, and `value_type_reason_en` fields in **English** (note the `_en` suffix; do not emit bare `evidence` / `fix`).
 - Use English even when SKILL.md, supporting files, or frontmatter are in another language.
 - Keep check IDs (the `<check.id>` JSON keys) untranslated.
 - Keep proper nouns (API, JSON, schema, Pydantic, etc.), file paths, and command names in their original form.
+- No need to emit `_zh` versions (the CLI will mirror the `_en` content into the Chinese pane).
 """
 
 
@@ -1252,14 +1414,22 @@ SYSTEM_PROMPT_ZH = """你是 SkillLens 的 agent-side Deep Review 评测员。�
 - biz.target_users.specific 不要求显式写 ## Target users；能从场景、输入输出或 workflow 稳定推断具体用户时可高分。
 
 【硬性输出】
-只返回严格 JSON，禁止 Markdown 代码块、解释或额外文字：
+只返回严格 JSON，禁止 Markdown 代码块、解释或额外文字。每个 results 条目和 meta.value_type_reason 必须按下文"输出语言要求"输出对应的 `_zh` / `_en` 字段(双语模式下两者都要,zh/en 单语模式只要对应一种):
 {
   "meta": {
     "value_type": "productivity | decision_support | learning | emotion_expression | utility",
-    "value_type_reason": "≤ 60 字一句话解释"
+    "value_type_reason_zh": "≤ 60 字中文一句话解释",
+    "value_type_reason_en": "<= 40 words English one-sentence reason"
   },
   "results": {
-    "<check.id>": {"ratio": <0..1>, "evidence": "≤100字现状诊断", "fix": "≤120字具体改法", "confidence": <0..1>}
+    "<check.id>": {
+      "ratio": <0..1>,
+      "evidence_zh": "≤100字中文现状诊断",
+      "evidence_en": "<=80 words English diagnosis",
+      "fix_zh": "≤120字中文具体改法",
+      "fix_en": "<=100 words English fix",
+      "confidence": <0..1>
+    }
   }
 }
 """
@@ -1282,14 +1452,22 @@ Before scoring checks, classify the skill into exactly one:
 - biz.target_users.specific does not require an explicit ## Target users section; score high if concrete users are reliably inferable from scenario, inputs/outputs, or workflow.
 
 [Hard output]
-Return strict JSON only. No Markdown fences, explanations, or extra text:
+Return strict JSON only. No Markdown fences, explanations, or extra text. Every results entry and `meta.value_type_reason` MUST emit the `_zh` / `_en` suffix fields specified by the "Output language" section below (both in bilingual mode; only one in zh / en single-language mode):
 {
   "meta": {
     "value_type": "productivity | decision_support | learning | emotion_expression | utility",
-    "value_type_reason": "<= 40 words"
+    "value_type_reason_zh": "≤ 60 字中文一句话解释",
+    "value_type_reason_en": "<= 40 words English one-sentence reason"
   },
   "results": {
-    "<check.id>": {"ratio": <0..1>, "evidence": "<=80 words diagnosis", "fix": "<=100 words concrete fix", "confidence": <0..1>}
+    "<check.id>": {
+      "ratio": <0..1>,
+      "evidence_zh": "≤100字中文现状诊断",
+      "evidence_en": "<=80 words English diagnosis",
+      "fix_zh": "≤120字中文具体改法",
+      "fix_en": "<=100 words English fix",
+      "confidence": <0..1>
+    }
   }
 }
 """
@@ -1323,17 +1501,31 @@ def _build_suggestions(pillars: list[dict], rubric: dict, lang: str, top_n: int 
     for c, dim_id, pillar_id in failed[:top_n]:
         entry = def_lookup.get(c["id"])
         cdef = entry["def"] if entry else None
-        title = (cdef or {}).get("desc_zh" if lang == "zh" else "desc_en", c["id"])
-        fallback_fix = (cdef or {}).get("fix_zh" if lang == "zh" else "fix_en")
+        title_zh = (cdef or {}).get("desc_zh", c["id"])
+        title_en = (cdef or {}).get("desc_en", c["id"])
+        title = title_zh if lang == "zh" else title_en
+        fallback_fix_zh = (cdef or {}).get("fix_zh")
+        fallback_fix_en = (cdef or {}).get("fix_en")
+        fallback_fix = fallback_fix_zh if lang == "zh" else fallback_fix_en
         fallback_example = (cdef or {}).get("example_zh" if lang == "zh" else "example_en")
+        evidence_zh = c.get("evidence_zh") or c.get("evidence") or "机器未给出具体原因"
+        evidence_en = c.get("evidence_en") or c.get("evidence") or "no machine reason"
+        fix_zh = c.get("fix_zh") or c.get("fix") or fallback_fix_zh or "请根据维度说明调整"
+        fix_en = c.get("fix_en") or c.get("fix") or fallback_fix_en or "refer to dimension tagline"
         out.append({
             "checkId": c["id"],
             "dimensionId": entry["dim_id"] if entry else dim_id,
             "pillarId": entry["pillar_id"] if entry else pillar_id,
             "severity": "high" if c["status"] == "fail" else "medium",
             "title": title,
-            "why": c.get("evidence") or ("机器未给出具体原因" if lang == "zh" else "no machine reason"),
+            "title_zh": title_zh,
+            "title_en": title_en,
+            "why": evidence_zh if lang == "zh" else evidence_en,
+            "why_zh": evidence_zh,
+            "why_en": evidence_en,
             "how": c.get("fix") or fallback_fix or ("请根据维度说明调整" if lang == "zh" else "refer to dimension tagline"),
+            "how_zh": fix_zh,
+            "how_en": fix_en,
             "example": c.get("example") or fallback_example,
             "weight": c["weight"],
         })
@@ -1454,9 +1646,11 @@ def main(argv: list[str]) -> int:
         default="auto",
         help=(
             "Language the LLM should write evidence / fix / value_type_reason in. "
-            "'auto' (default) follows the SKILL.md detected language; 'zh' or 'en' forces "
-            "Chinese / English output regardless of source language. Use 'zh' to get a "
-            "Chinese-language Deep Review report from an English skill (or vice versa)."
+            "'auto' / 'bilingual' (default) asks the LLM for BOTH Chinese and English "
+            "(evidence_zh + evidence_en, fix_zh + fix_en) so the HTML report's ZH/EN "
+            "toggle actually switches body content, not just labels. 'zh' or 'en' "
+            "forces single-language output (≈ half the output tokens) — both panes "
+            "of the HTML report will fall back to the chosen language."
         ),
     )
     parser.add_argument(

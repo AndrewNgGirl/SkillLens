@@ -1253,6 +1253,23 @@ def pick_lang(report: dict) -> str:
     return "zh" if report.get("language") == "zh" else "en"
 
 
+def pick_bilingual(obj: dict, base: str, lang: str) -> str:
+    """Return ``obj[base_lang]`` if present, else legacy ``obj[base]``, else ''.
+
+    Bilingual schema (≥ 0.5.0): score.py emits ``evidence_zh`` + ``evidence_en``
+    (and ``fix_zh`` + ``fix_en``, ``why_zh`` + ``why_en``, ``how_zh`` + ``how_en``,
+    ``title_zh`` + ``title_en``, ``value_type_reason_zh`` + ``value_type_reason_en``).
+    Older single-language JSON only has the bare field — this helper keeps both
+    formats rendering.
+    """
+    if not isinstance(obj, dict):
+        return ""
+    val = obj.get(f"{base}_{lang}")
+    if val:
+        return val
+    return obj.get(base) or ""
+
+
 def label(L: dict, key: str, fallback: str = "") -> str:
     return L.get(key, fallback or key)
 
@@ -1427,7 +1444,8 @@ def _meta_card(report: dict, L: dict, lang: str, *, embed_sub_skills: bool = Tru
         rows.append((L["skill_type"], f"{type_text}{suffix}"))
     rows_html = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in rows)
     value_type = report.get("llmMeta", {}).get("value_type") if isinstance(report.get("llmMeta"), dict) else None
-    reason = report.get("llmMeta", {}).get("value_type_reason") if isinstance(report.get("llmMeta"), dict) else None
+    llm_meta = report.get("llmMeta") if isinstance(report.get("llmMeta"), dict) else {}
+    reason = pick_bilingual(llm_meta, "value_type_reason", lang) if llm_meta else None
     vt_html = ""
     if value_type:
         reason_html = ""
@@ -1627,7 +1645,7 @@ def _check_item(check: dict, L: dict, lang: str, def_lookup: dict[str, dict] | N
     tone = status_tone(status)
     cdef = (def_lookup or {}).get(check.get("id", ""), {})
     title = cdef.get("desc_zh" if lang == "zh" else "desc_en", check.get("id", ""))
-    evidence = check.get("evidence", "")
+    evidence = pick_bilingual(check, "evidence", lang)
     # For not_applicable checks: rewrite the evidence in the current report
     # language so a Chinese pane never shows English boilerplate (and vice
     # versa). The author-written `evidence` is replaced because not_applicable
@@ -1638,7 +1656,7 @@ def _check_item(check: dict, L: dict, lang: str, def_lookup: dict[str, dict] | N
         evidence = L["not_applicable_evidence"].format(
             skill_type=skill_type_label, scope=scope or "—"
         )
-    fix = check.get("fix")
+    fix = pick_bilingual(check, "fix", lang)
     confidence = check.get("confidence")
     weight = check.get("weight", 0)
     type_label = L["type_llm"] if check.get("type") == "llm" else L["type_rule"]
@@ -1836,9 +1854,9 @@ def _suggestion_card(s: dict, idx: int, L: dict, lang: str, finance: bool = Fals
     if pillar_id and not finance:
         # try to give a friendly name
         pillar_label = s.get("pillarId", "")
-    why = s.get("why") or ""
-    title = s.get("title") or s.get("checkId", "")
-    how = s.get("how") or title
+    why = pick_bilingual(s, "why", lang)
+    title = pick_bilingual(s, "title", lang) or s.get("checkId", "")
+    how = pick_bilingual(s, "how", lang) or title
     return f'''
 <article class="suggestion{finance_class}" style="background:{bg}; border-color:{ring};">
   <div class="row">
@@ -1981,9 +1999,11 @@ def _finance_check_item(check: dict, L: dict, lang: str, def_lookup: dict[str, d
     confidence_html = ""
     if confidence is not None:
         confidence_html = f'<span class="chip">{esc(L["confidence"])}: {int(round(float(confidence) * 100))}%</span>'
+    evidence = pick_bilingual(check, "evidence", lang)
+    fix = pick_bilingual(check, "fix", lang)
     fix_html = ""
-    if check.get("fix"):
-        fix_html = f'<div class="check-fix"><span class="label">{esc(L["fix"])}</span>{esc(check["fix"])}</div>'
+    if fix:
+        fix_html = f'<div class="check-fix"><span class="label">{esc(L["fix"])}</span>{esc(fix)}</div>'
     return f'''
 <li class="check">
   <div class="check-head">
@@ -1993,7 +2013,7 @@ def _finance_check_item(check: dict, L: dict, lang: str, def_lookup: dict[str, d
     <div class="check-body">
       <div class="check-title">{esc(title)}</div>
       {subtitle_html}
-      <div class="check-evidence"><span class="label">{esc(L["evidence"])}</span>{esc(check.get("evidence", ""))}</div>
+      <div class="check-evidence"><span class="label">{esc(L["evidence"])}</span>{esc(evidence)}</div>
       {fix_html}
       <div class="check-meta">
         {confidence_html}
@@ -2264,8 +2284,8 @@ def _md_pillar(pillar: dict, L: dict, lang: str, level: int = 3) -> list[str]:
             icon = STATUS_TONES.get(status, STATUS_TONES["n_a"])["icon"]
             status_text = f'{icon} {L[f"status_{status}"]}'
             cid = c.get("id", "")
-            evidence = _md_escape(c.get("evidence", "—"))
-            fix = _md_escape(c.get("fix", "")) or "—"
+            evidence = _md_escape(pick_bilingual(c, "evidence", lang) or "—")
+            fix = _md_escape(pick_bilingual(c, "fix", lang)) or "—"
             conf_v = c.get("confidence")
             conf = f"{int(round(float(conf_v) * 100))}%" if conf_v is not None else "—"
             out.append(f"| {status_text} | `{cid}` (w={c.get('weight', 0)}) | {evidence} | {fix} | {conf} |")
@@ -2323,8 +2343,8 @@ def _md_finance(finance: dict, L: dict, lang: str, def_lookup: dict[str, dict] |
                 cell_parts.append(f"<sub>{_md_escape(aux)}</sub>")
             cell_parts.append(f"<sub>`{cid}` · w={c.get('weight', 0)}</sub>")
             check_cell = "<br>".join(cell_parts)
-            evidence = _md_escape(c.get("evidence", "—"))
-            fix = _md_escape(c.get("fix", "")) or "—"
+            evidence = _md_escape(pick_bilingual(c, "evidence", lang) or "—")
+            fix = _md_escape(pick_bilingual(c, "fix", lang)) or "—"
             conf_v = c.get("confidence")
             conf = f"{int(round(float(conf_v) * 100))}%" if conf_v is not None else "—"
             out.append(f"| {status_text} | {check_cell} | {evidence} | {fix} | {conf} |")
@@ -2335,11 +2355,14 @@ def _md_finance(finance: dict, L: dict, lang: str, def_lookup: dict[str, dict] |
         out.append(f"### {L['suggestions_finance']}")
         out.append("")
         for i, s in enumerate(sugg):
-            out.append(f"{i+1}. **{_md_escape(s.get('how', s.get('title', s.get('checkId', ''))))}** _(`{s.get('checkId', '')}`, w={s.get('weight', 0)})_")
-            if s.get("title"):
-                out.append(f"   - {L['suggestion_addresses']}: {_md_escape(s['title'])}")
-            if s.get("why"):
-                out.append(f"   - {L['evidence']}: {_md_escape(s['why'])}")
+            how_text = pick_bilingual(s, "how", lang) or pick_bilingual(s, "title", lang) or s.get("checkId", "")
+            title_text = pick_bilingual(s, "title", lang)
+            why_text = pick_bilingual(s, "why", lang)
+            out.append(f"{i+1}. **{_md_escape(how_text)}** _(`{s.get('checkId', '')}`, w={s.get('weight', 0)})_")
+            if title_text:
+                out.append(f"   - {L['suggestion_addresses']}: {_md_escape(title_text)}")
+            if why_text:
+                out.append(f"   - {L['evidence']}: {_md_escape(why_text)}")
         out.append("")
     return out
 
@@ -2394,7 +2417,7 @@ def render_markdown(
 
     vt = (report.get("llmMeta") or {}).get("value_type")
     if vt:
-        reason = (report.get("llmMeta") or {}).get("value_type_reason", "")
+        reason = pick_bilingual(report.get("llmMeta") or {}, "value_type_reason", lang)
         out.append(f"**{L['value_type_label']}**: {value_type_label(L, vt)}")
         if reason:
             out.append(f"> {_md_escape(reason)}")
@@ -2424,11 +2447,14 @@ def render_markdown(
         out.append(f"## {L['suggestions_general']}")
         out.append("")
         for i, s in enumerate(sugg):
-            out.append(f"{i+1}. **{_md_escape(s.get('how', s.get('title', s.get('checkId', ''))))}** _({s.get('severity', '')}, `{s.get('checkId', '')}`, w={s.get('weight', 0)})_")
-            if s.get("title"):
-                out.append(f"   - {L['suggestion_addresses']}: {_md_escape(s['title'])}")
-            if s.get("why"):
-                out.append(f"   - {L['evidence']}: {_md_escape(s['why'])}")
+            how_text = pick_bilingual(s, "how", lang) or pick_bilingual(s, "title", lang) or s.get("checkId", "")
+            title_text = pick_bilingual(s, "title", lang)
+            why_text = pick_bilingual(s, "why", lang)
+            out.append(f"{i+1}. **{_md_escape(how_text)}** _({s.get('severity', '')}, `{s.get('checkId', '')}`, w={s.get('weight', 0)})_")
+            if title_text:
+                out.append(f"   - {L['suggestion_addresses']}: {_md_escape(title_text)}")
+            if why_text:
+                out.append(f"   - {L['evidence']}: {_md_escape(why_text)}")
         out.append("")
 
     if finance:

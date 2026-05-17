@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.1 — Truly Bilingual Deep Review
+
+Fixes a long-standing mismatch in the HTML report: the ZH/EN toggle used to only switch UI chrome (pillar labels, dimension tags, status badges) while the LLM-generated `evidence` and `fix` content stayed in whichever language the LLM was asked to write. A Chinese reader looking at the default Chinese UI would still see English diagnosis text inside the Finance Expert section, because the finance pillars are 100% LLM-evaluated.
+
+### Highlights
+
+- **Bilingual LLM output is the new default.** The agent-side Deep Review prompt now asks the LLM to emit BOTH Chinese and English for every result (`evidence_zh` + `evidence_en`, `fix_zh` + `fix_en`, `value_type_reason_zh` + `value_type_reason_en`). The HTML report's ZH/EN toggle now actually switches body content, not just labels.
+- **No breaking change for old reports.** `score.py --llm-results` still accepts single-language LLM JSON (legacy `evidence` / `fix`); the CLI mirrors it into both languages so old reports keep rendering. `evidence` and `fix` remain in the output schema as the primary-language alias.
+- **Token-budget escape hatch.** Pass `--llm-language zh` or `--llm-language en` to force single-language output (≈ half the LLM output tokens). Both panes of the HTML report fall back to the chosen language.
+
+### What's new
+
+- New JSON schema fields on every check: `evidence_zh`, `evidence_en`, and (when a fix is present) `fix_zh`, `fix_en`. `evidence` / `fix` are preserved and equal the English side by default for back-compat consumers.
+- New JSON schema fields on `llmMeta`: `value_type_reason_zh`, `value_type_reason_en`. The legacy `value_type_reason` is preserved.
+- New JSON schema fields on every entry under `suggestions` and `domainExpert.suggestions`: `title_zh`, `title_en`, `why_zh`, `why_en`, `how_zh`, `how_en`. Legacy `title` / `why` / `how` are preserved (set to the primary language).
+- `--llm-language {auto,bilingual,zh,en}` — `auto` is now an alias for `bilingual` (was: "follow SKILL.md source language"). Behavior is documented in `--help`.
+- `engineVersion` bumped to `0.4.1`.
+- `render_report.py` reads `<field>_<lang>` first and falls back to legacy `<field>`, so the same renderer handles old and new JSON transparently.
+- Markdown export (`*-report.md`) is also bilingual-aware.
+
+### Migration
+
+- **Re-running an existing skill on the new CLI**: just re-run the three-step workflow (`--agent-prompt` → LLM produces JSON → `--llm-results`). The new prompt automatically asks for bilingual output and the new merge step preserves it end-to-end.
+- **Reusing old `agent-llm-results.json`**: works as-is; the report will show the same single-language content in both panes (graceful degradation).
+- **Third-party consumers of the JSON**: continue to read `evidence` / `fix` as before; opt into bilingual when ready by reading `evidence_zh` / `evidence_en` instead.
+
 ## 0.4.0 — Type-Aware Rubric & Shareable Offline Reports
 
 Two independent shifts land together. **First**, the rubric is now skill-type-aware: pipeline orchestrators and composite toolkits are no longer scored as if they were atomic single-purpose skills, so reports stop nagging pipelines to "rewrite the schema in the root SKILL.md" and start asking the questions that actually matter for that shape. **Second**, the CLI now produces a polished offline report — JSON, GitHub-flavored Markdown, and a self-contained HTML that visually matches the web UI and exports to PDF via the browser's Cmd+P — so evaluation results are easy to share without standing up the web app.

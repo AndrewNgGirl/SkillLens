@@ -147,19 +147,56 @@ python3 skills/skill-scorer/scripts/score.py --output-dir ./out ./my-skill
 
 ### LLM Output Language
 
-By default the agent-side LLM mirrors the SKILL.md's detected language: a Chinese skill yields Chinese `evidence` / `fix` / `value_type_reason`, an English skill yields English. Pass `--llm-language {auto,zh,en}` to decouple the two:
+The agent-side LLM emits **bilingual** Chinese + English content by default so the HTML report's ZH/EN toggle actually switches body content (not just labels). Pass `--llm-language {auto,bilingual,zh,en}` to control this:
 
-- `auto` (default) — follow SKILL.md detection.
-- `zh` — force Simplified Chinese answers regardless of source language. Useful when a Chinese reviewer evaluates an English skill and wants the report to be readable in Chinese.
-- `en` — force English answers regardless of source language.
+- `auto` / `bilingual` (default) — the LLM writes both languages for every result: `evidence_zh` + `evidence_en`, `fix_zh` + `fix_en`, and `value_type_reason_zh` + `value_type_reason_en`. Roughly doubles the LLM's output-token budget, but the input-token cost (which dominates the bill) is unchanged.
+- `zh` — single-language Chinese (`evidence_zh` / `fix_zh` only). The CLI mirrors the same content into both panes of the HTML report.
+- `en` — single-language English (`evidence_en` / `fix_en` only). Same mirroring behavior.
 
-The flag injects an explicit `## Output language` block into the agent prompt next to the skill-type lens, so `code-agent` will obey when it forwards the prompt to its LLM. The HTML / Markdown report's `Top Improvements` and per-check `evidence` / `fix` will then appear in the chosen language. (HTML report's UI chrome — pillar names, dimension labels, etc. — has its own ZH/EN toggle and is unrelated to this flag.)
+The flag injects an explicit `## 输出语言要求 / Output language` block into the agent prompt next to the skill-type lens, so `code-agent` will obey when it forwards the prompt to its LLM. The HTML report renders the current language's body content from `<field>_<lang>` (falling back to the legacy `<field>` for old JSON), so old single-language `agent-llm-results.json` files continue to render under both panes (graceful degradation).
 
 ```bash
-# English skill, Chinese review answers
+# Default: bilingual, recommended for shareable reports
+python3 skills/skill-scorer/scripts/score.py \
+  --agent-prompt \
+  ./my-skill > deep-review-prompt.md
+
+# Single-language Chinese (≈ half the LLM output tokens)
 python3 skills/skill-scorer/scripts/score.py \
   --agent-prompt --llm-language zh \
   ./my-english-skill > deep-review-prompt.md
+```
+
+The merged JSON schema (≥ engineVersion 0.4.1):
+
+```json
+{
+  "llmMeta": {
+    "value_type": "productivity",
+    "value_type_reason":    "<primary-language alias>",
+    "value_type_reason_zh": "中文一句话理由",
+    "value_type_reason_en": "English one-sentence reason"
+  },
+  "pillars": [{
+    "dimensions": [{
+      "checks": [{
+        "id": "biz.target_users.specific",
+        "status": "partial",
+        "evidence":    "<primary-language alias>",
+        "evidence_zh": "中文现状",
+        "evidence_en": "English diagnosis",
+        "fix":    "<primary-language alias>",
+        "fix_zh": "中文改法",
+        "fix_en": "English fix"
+      }]
+    }]
+  }],
+  "suggestions": [{
+    "title": "...", "title_zh": "...", "title_en": "...",
+    "why":   "...", "why_zh":   "...", "why_en":   "...",
+    "how":   "...", "how_zh":   "...", "how_en":   "..."
+  }]
+}
 ```
 
 ### Domain Expert Review
