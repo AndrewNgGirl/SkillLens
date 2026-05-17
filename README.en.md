@@ -85,18 +85,18 @@ The Finance Expert overlay lives in `skills/skill-scorer/domains/finance/rubric.
 
 SkillLens can evaluate:
 
-- A single `SKILL.md`
-- A skill folder containing files such as `scripts/`, `references/`, `assets/`, tests, schemas, or examples
-- A zipped skill package
-- Claude-style skills
-- OpenClaw-style skills
-- Cursor-compatible skill projects
+**Package shapes** (auto-detected; can be overridden with `--skill-type`):
 
-Built-in examples live in `skills/skill-scorer/examples/`:
+- **atomic** — a single `SKILL.md`, or a SKILL.md plus a folder of `scripts/`, `references/`, `assets/`, `tests/`, `*.schema.json`, `requirements.txt`, and similar companion files.
+- **pipeline** — an orchestrator package with multiple child SKILL.md files: the root SKILL.md is the router and the real business logic lives under `agents/<sub-agent>/SKILL.md` or similar sub-directories. CLI and web auto-detect this (≥1 child SKILL.md ⇒ pipeline) and switch to the pipeline lens.
+- **composite** — a toolkit bundle where each child SKILL.md is an independent tool and the root SKILL.md is mostly an index / decision tree. Mark it explicitly with `--skill-type composite` (CLI) or the "Composite" card above the Uploader (Web).
+- **Archives** — all three shapes work as `.zip` uploads: SkillLens unpacks and evaluates the directory tree as-is.
 
-- `pr-reviewer`: general PR review sample.
-- `stock-trading-analyst`: high-fidelity stock trading / watchlist finance sample with schema, scripts, tests, and references.
-- Additional finance scenario samples: fundraising, quant trading, securities research, banking workflow, financial education, financial data analysis, and other finance scenarios.
+**Skill ecosystems**: Claude, OpenClaw, and Cursor frontmatter / directory conventions are all parsed correctly. As long as the root has a `SKILL.md` with at least `name` + `description` in the frontmatter, SkillLens can score it.
+
+**Input sources**: local path (CLI / Web drag-and-drop), `.zip` upload, and the web "Load Sample" button. The web UI does not yet pull skills from a GitHub URL directly — for the agent path, the code agent should clone the repo first and pass the local path.
+
+**Built-in examples**: `skills/skill-scorer/examples/` ships 11 examples — 1 general atomic (`pr-reviewer`), 2 pipelines (`pr-pipeline` and `mega-pipeline` with 53 sub-agents for realistic-scale stress testing), and 8 finance-scenario atomic skills (one per Finance Expert `--scenario`; `stock-trading-analyst` is the most complete, shipping schema, scripts, tests, and references). The web "Load Sample" button maps each entry to the currently selected review mode.
 
 ## Two Usage Paths
 
@@ -105,124 +105,86 @@ SkillLens now has two clear entry points:
 - **Web UI**: for humans. Upload `SKILL.md`, a skill folder, or a `.zip`, then review the report in the browser. See `web/README.md`.
 - **Agent CLI**: for Cursor, WorkBuddy, Hermes, and similar code agents. Use the official CLI and certificate workflow for agent-side Deep Review; Finance Expert Review is available through `--domain finance --scenario <scenario-id>`. See `skills/skill-scorer/USAGE.md`.
 
-## Agent CLI
-
-Code agents such as Cursor, WorkBuddy, Hermes, and similar tools can call SkillLens as an official local tool. The Agent CLI accepts `.zip` / directories / `SKILL.md`; full agent-side Deep Review uses the code agent's own model plan and does not spend your SkillLens server API key.
-
-Detailed commands, the three-step workflow, certificate verification, Finance Expert parameters, and the copy-paste prompt for code agents all live in `skills/skill-scorer/USAGE.md`. Code agents should start with `--agent-wizard` so the CLI guides the user through general vs. Finance Expert Review; if finance is selected, the wizard also asks for the scenario.
-
-```bash
-python3 skills/skill-scorer/scripts/score.py --agent-wizard <path-to-skill>
-```
-
-For a fast rule-only preview:
-
-```bash
-python3 skills/skill-scorer/scripts/score.py <path-to-skill>
-```
-
 ## Output
 
-SkillLens produces:
+The scoring logic and rubric are identical whether you run via the Web UI or the CLI; only the *form* of the output differs.
 
-- Overall score and grade: `S / A / B / C / D`
-- Radar chart and pillar-level breakdown
-- Rule-based checks with pass / partial / fail statuses
-- Optional LLM-powered Deep Review
-- Optional Finance Expert overlay: `domainExpert.score`, `riskLevel`, `commercialReadiness`
-- Market research signals from GitHub search
-- Top improvement suggestions
-- Exportable report (JSON / HTML / Markdown)
+### What you see in the Web UI
 
-If no model key is configured, SkillLens still runs in preview mode with mock scores so you can explore the UI.
+- **Total score + grade**: 100-point total, `S / A / B / C / D` grade, 5-axis radar chart
+- **5 pillars and dimension evidence cards**: each check shows pass / partial / fail / not_applicable status, evidence, and a fix suggestion
+- **Top improvement suggestions**: actionable list ranked by weighted impact
+- **Finance Expert tab** (when enabled): switchable General / Finance tabs (Finance shown first), with risk level and commercial readiness
+- **Market research signals**: similar skills and alternatives from GitHub search
+- **Export**: JSON, copy-as-Markdown, or generate PDF
+- **Bilingual UI and report content**
 
-### One-Shot HTML / Markdown Export from CLI
+Without a model key, SkillLens runs in mock-score preview mode so the full UI is still usable.
 
-The CLI prints JSON to stdout by default. Pass `--output-dir` to also write a self-contained HTML and a GitHub-flavored Markdown alongside the JSON:
+### What the CLI emits
 
-```bash
-python3 skills/skill-scorer/scripts/score.py \
-  --llm-results agent-llm-results.json \
-  --domain finance --scenario stock_trading \
-  --output-dir ./out \
-  <path-to-skill>
+By default the CLI prints the scoring JSON to stdout. Add `--output-dir <dir>` to also write three artifacts (visually identical to the web UI; **open the HTML in a browser and press Cmd+P for a polished PDF**, no extra dependency required):
 
-# ./out/<skill-name>-report.json
-# ./out/<skill-name>-report.html   ← matches the web UI: brand colors, glass cards, inline SVG radar, dark/print modes
-# ./out/<skill-name>-report.md
+```text
+<skill-name>-report.json   raw scoring JSON (same as stdout)
+<skill-name>-report.html   self-contained single-file HTML (with ZH/EN toggle and @media print)
+<skill-name>-report.md     GitHub-flavored Markdown
 ```
 
-Open the HTML in a browser and press Cmd+P for a polished PDF (no extra dependency). Both Finance Expert and General reports are rendered in switchable tabs (default: Finance) when `--domain finance` is set.
+Under `--agent-prompt`, `--output-dir` also writes `<skill-name>-agent-deep-review-prompt.md`.
 
-### Pipeline / Multi-sub-skill Packages
-
-When the package is not a single SKILL.md but a bundle of multiple sub SKILL.md files ("pipeline" or "toolkit"), SkillLens auto-detects the structure and switches the evaluation lens, so you don't get atomic-style noise like "rewrite the schema in the root SKILL.md".
-
-Core mechanism:
-
-- **Auto-detect + explicit override**: CLI takes `--skill-type {auto,atomic,pipeline,composite}` (default `auto`); the web Uploader has 4 type cards above the upload area. `auto` counts sub SKILL.md files; ≥1 marks the package as `pipeline`.
-- **Three-type differentiated rubric** (see "What It Evaluates" above). Each check declares `applies_to: [atomic|pipeline|composite]`. Out-of-scope checks are emitted as `not_applicable`, never sent to the LLM, never surface in Top Improvements, and never enter the pillar denominator. When all checks in a dimension are filtered out, the whole dimension is dropped from renormalization.
-- **Pipeline / composite lens prompts**: Both CLI and web inject a system-prompt section telling the LLM not to apply atomic standards and to focus on routing clarity / sub-agent boundaries / IO protocols / partial-failure handling / sub-skill self-containment.
-- **Attachment priority**: Every sub SKILL.md is packaged for the LLM with an 8000-char budget (so they're never bumped out by long supporting files); other attachments stay at 4000 chars.
-- **Report rendering**: The HTML / Markdown / web meta card shows `Skill type: pipeline (auto-detected)` and lists every sub SKILL.md. Each pillar shows only the dimensions applicable to the current type by default; fully-N/A dims fold into a "show N dimensions not applicable to this skill type" toggle at the bottom.
-
-```bash
-# CLI: force pipeline lens regardless of structure heuristic
-python3 skills/skill-scorer/scripts/score.py \
-  --skill-type pipeline \
-  --output-dir ./out \
-  ./my-pipeline-package
-
-# CLI: default auto, picks pipeline if any sub SKILL.md is found
-python3 skills/skill-scorer/scripts/score.py --output-dir ./out ./my-skill
-```
-
-To extend: edit `applies_to` in `rubric.yaml`, run `python3 skills/skill-scorer/scripts/sync_rubric_to_ts.py` to mirror to `web/lib/rubric/rubric.ts`, and add a lens paragraph in `scripts/score.py::render_skill_type_block` and `web/lib/llm/prompts.ts::renderSkillTypeBlock` if introducing a new type-only dimension. The full applies_to table and extension guide live in [`skills/skill-scorer/USAGE.md`](skills/skill-scorer/USAGE.md#rubric-scope-filter-applies_to).
-
-### Report UI Language Toggle
-
-The HTML report ships a built-in ZH / EN toggle (defaults to Chinese; the choice is persisted to `localStorage`). `?lang=zh` / `?lang=en` in the URL forces a single language for sharing. Cmd+P only prints the currently selected language.
-
-The LLM-generated `evidence` / `fix` / sub SKILL.md descriptions are author / model output and the renderer doesn't translate them. To control the LLM output language independent of the source SKILL.md language:
-
-- **CLI**: `--llm-language {auto,zh,en}` (default `auto`, follows SKILL.md detection).
-- **Web**: `runLlmReview(skill, rubric, { lang, outputLang: "zh" })` — `req.lang` controls prompt body language, `outputLang` controls LLM answer language.
-
-```bash
-# English skill, Chinese Deep Review answers
-python3 skills/skill-scorer/scripts/score.py \
-  --agent-prompt --llm-language zh ./my-english-skill > prompt.md
-```
+The report language follows the source SKILL.md by default; pass `--llm-language {auto,zh,en}` to force a specific LLM answer language (e.g. an English skill with Chinese evidence / fix).
 
 ## Quick Start
+
+Two parallel paths — pick whichever fits your context.
+
+### Web UI (for humans)
 
 ```bash
 cd web
 npm install
-cp .env.example .env.local
-npm run dev
+cp .env.example .env.local      # optional: add a model key (see below)
+npm run dev                     # http://localhost:3000
 ```
 
-Open `http://localhost:3000`.
-
-## Configure Model Keys
-
-To enable full Deep Review, put at least one provider key in `web/.env.local`:
+A model key is required for full Deep Review. At least one of:
 
 ```env
 DEEPSEEK_API_KEY=
 ANTHROPIC_API_KEY=
 ```
 
-Real keys must stay in `.env.local` or your deployment platform's secret manager. Do not commit them.
-
-For public deployments, keep the browser-origin guard enabled so tools cannot directly spend your model quota through `/api/llm`:
+For public deployments, keep the browser-origin guard on so external tools cannot drain your quota through `/api/llm`:
 
 ```env
 LLM_REQUIRE_BROWSER_REQUEST=1
 ```
 
-With this setting, normal web users can still click Deep Review without entering a token. The API only accepts same-origin browser requests from the SkillLens page. If you also need private server-to-server access, set `LLM_ACCESS_TOKEN` and pass it in `x-skilllens-llm-token` or `Authorization: Bearer ...`.
+For private server-to-server access, also set `LLM_ACCESS_TOKEN`. Other optional env vars and security notes live in [`web/README.md`](web/README.md).
+
+### CLI (for code agents)
+
+No key needed for a rule-only preview:
+
+```bash
+# Rule-only preview
+python3 skills/skill-scorer/scripts/score.py <path-to-skill>
+
+# Multi-sub-skill bundle: explicit type override (default is auto-detect)
+python3 skills/skill-scorer/scripts/score.py --skill-type pipeline <path-to-package>
+
+# Export HTML + Markdown + JSON in one go
+python3 skills/skill-scorer/scripts/score.py --output-dir ./out <path-to-skill>
+```
+
+For full Deep Review, use the interactive wizard. It walks the user through general vs. Finance Expert Review and prints the official three-step commands:
+
+```bash
+python3 skills/skill-scorer/scripts/score.py --agent-wizard <path-to-skill>
+```
+
+The full contract — the `--agent-prompt` → model JSON → `--llm-results` three-step flow, `deepReviewCertificate` verification, Finance Expert `--domain finance --scenario <id>` parameters, and a copy-paste prompt for code agents — lives in [`skills/skill-scorer/USAGE.md`](skills/skill-scorer/USAGE.md).
 
 ## Repository Structure
 
@@ -259,14 +221,29 @@ With this setting, normal web users can still click Deep Review without entering
 
 ## Development
 
+**Web side** (Next.js / TypeScript):
+
 ```bash
 cd web
-npm run lint
-npm run typecheck
-npm run build
+npm run lint        # ESLint
+npm run typecheck   # tsc --noEmit
+npm run build       # production build
 ```
 
-More setup details are in `web/README.md`.
+**CLI / rubric side** (Python, no virtualenv required, only `pyyaml`):
+
+```bash
+# After editing rubric.yaml — required: verify the web/lib/rubric/rubric.ts mirror is in sync
+python3 skills/skill-scorer/scripts/sync_rubric_to_ts.py --check
+
+# Re-generate the mirror when out of sync
+python3 skills/skill-scorer/scripts/sync_rubric_to_ts.py
+
+# Rule-only regression on an example skill (no LLM credits, returns in seconds)
+python3 skills/skill-scorer/scripts/score.py skills/skill-scorer/examples/pr-reviewer
+```
+
+After any rubric change, please regress on all three skill shapes (`pr-reviewer` / `pr-pipeline` / a self-made composite fixture) to make sure the `applies_to` filtering and pillar renormalization still hold. Web deployment details live in [`web/README.md`](web/README.md).
 
 ## Security
 

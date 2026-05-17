@@ -83,20 +83,18 @@ SkillLens 用 5 大支柱、100 分制评分。rubric 共 34 个子维度，按 
 
 ## 支持的输入
 
-SkillLens 可以评测：
+**包形态**（自动识别 + 可手动指定 `--skill-type`）：
 
-- 单个 `SKILL.md`
-- 包含 `scripts/`、`references/`、`assets/`、测试、schema 或示例的 skill 文件夹
-- 打包后的 skill `.zip`
-- Claude 风格 skill
-- OpenClaw 风格 skill
-- Cursor 兼容的 skill 项目
+- **atomic**：单个 `SKILL.md`，或一个 SKILL.md + `scripts/` `references/` `assets/` `tests/` `*.schema.json` `requirements.txt` 等附属文件的目录。
+- **pipeline**：含多个子 SKILL.md 的"编排器"包，根 SKILL.md 是 router，业务逻辑下沉在 `agents/<sub-agent>/SKILL.md` 或子目录里。CLI 与 Web 都会自动识别（≥1 个子 SKILL.md 即视为 pipeline），并切换到 pipeline lens 评测视角。
+- **composite**：含多个独立 SKILL.md 的"工具集"包（每个子 SKILL.md 是一件独立工具，根 SKILL.md 主要负责索引与路由说明）。需要通过 `--skill-type composite`（CLI）或 Uploader 上方"Composite"卡片（Web）显式指定。
+- **打包格式**：以上三种都支持 `.zip` 上传——压缩包会被解压、按目录原样评测。
 
-仓库内置示例位于 `skills/skill-scorer/examples/`：
+**兼容的 Skill 生态**：Claude / OpenClaw / Cursor 三套 frontmatter 与目录约定都能正确解析；只要根目录有 `SKILL.md` 且含基本 frontmatter（`name` + `description`），SkillLens 就能跑评分。
 
-- `pr-reviewer`：通用 PR 评审示例。
-- `stock-trading-analyst`：高完整度炒股 / 短线 / 盯盘金融示例，包含 schema、脚本、测试和参考资料。
-- 其他金融子场景示例：投融资、量化交易、证券研究、银行流程、金融教育、金融数据分析和其他金融场景。
+**输入来源**：本地路径（CLI / Web 拖拽）、`.zip` 上传、Web 端的"载入示例"。Web UI 暂不直接支持 GitHub URL 拉取，code agent 路径下可以由 agent 先 clone 再传本地路径。
+
+**内置示例**：`skills/skill-scorer/examples/` 下共 11 个示例——1 个通用 atomic（`pr-reviewer`）、2 个 pipeline（`pr-pipeline` / `mega-pipeline`，含 53 子 agent 的大规模压测样本）、8 个金融场景 atomic（每个对应金融专家版的一个 `--scenario`，其中 `stock-trading-analyst` 是最完整、含 schema/scripts/tests/references 的金融示例）。Web 端"载入示例"按钮会按当前评测模式自动映射对应的 skill。
 
 ## 两种使用入口
 
@@ -105,126 +103,86 @@ SkillLens 现在分成两条清晰路径：
 - **Web UI**：给人使用。上传 `SKILL.md`、skill 文件夹或 `.zip`，在浏览器里生成报告。详见 `web/README.md`。
 - **Agent CLI**：给 Cursor、WorkBuddy、Hermes、小龙虾等 code agent 使用。通过官方 CLI 和证书机制完成 agent-side Deep Review，也支持 `--domain finance --scenario <scenario-id>` 金融专家版。详见 `skills/skill-scorer/USAGE.md`。
 
-## Agent CLI
-
-Cursor、WorkBuddy、Hermes、小龙虾等 code agent 可以把 SkillLens 当作本地官方工具调用。Agent CLI 支持 `.zip` / 目录 / `SKILL.md`，完整 agent-side Deep Review 使用 code agent 自己的模型套餐，不消耗 SkillLens 服务端 key。
-
-详细命令、三步工作流、证书验真、金融专家版参数和可复制给 code agent 的提示词，都集中在 `skills/skill-scorer/USAGE.md`。Code agent 使用时建议先运行 `--agent-wizard`，由 CLI 引导用户选择通用评测或金融专家版；如果选择金融专家版，还会继续确认具体金融场景。
-
-```bash
-python3 skills/skill-scorer/scripts/score.py --agent-wizard <path-to-skill>
-```
-
-如果只是想快速看规则分，可以直接运行：
-
-```bash
-python3 skills/skill-scorer/scripts/score.py <path-to-skill>
-```
-
 ## 输出结果
 
-SkillLens 会生成：
+无论从 Web UI 还是 CLI 进入，评分逻辑和 rubric 都是同一套；差异在于"看到的形态"。
 
-- 总分和等级：`S / A / B / C / D`
-- 雷达图和支柱维度拆解
-- 规则检查结果：pass / partial / fail
-- 可选的 LLM 深度评审
-- 可选的金融专家版附加报告：`domainExpert.score`、`riskLevel`、`commercialReadiness`
-- 基于 GitHub Search 的市场调研信号
-- Top 改进建议
-- 可导出的评测报告
+### Web UI 上你会看到
 
-如果没有配置模型 API Key，SkillLens 仍然可以用 mock 分数进入预览模式，方便先体验 UI。
+- **总分卡 + 等级**：100 分制总分、`S / A / B / C / D` 等级、5 维雷达图
+- **5 大支柱与维度证据卡**：每个 check 的 pass / partial / fail / not_applicable 状态、证据引用、fix 建议
+- **Top 改进建议**：按权重影响排序的可执行清单
+- **金融专家版 tab**（启用时）：通用 / 金融两个 tab 切换，金融视图默认在前，含风险等级与商业成熟度
+- **市场调研信号**：基于 GitHub Search 的同类 skill 与替代品提示
+- **导出**：JSON / 复制 Markdown / 生成 PDF
+- **中英双语切换**：界面与报告内容都支持
 
-### CLI 一键导出 HTML / Markdown 报告
+未配置模型 key 时，自动用 mock 分数进入预览模式，UI 仍可完整体验。
 
-CLI 默认会把 JSON 评分写到 stdout。如果要给团队、客户或开源 README 看，加一个 `--output-dir` 就能在指定目录里同时生成 **三份产物**：
+### CLI 输出
 
-```bash
-python3 skills/skill-scorer/scripts/score.py \
-  --llm-results agent-llm-results.json \
-  --domain finance --scenario stock_trading \
-  --output-dir ./out \
-  <path-to-skill>
+默认把 JSON 评分写到 stdout。加 `--output-dir <dir>` 同时落盘三份产物（视觉与 Web 一致，**浏览器打开后 Cmd+P 即可导出 PDF**，无需任何额外依赖）：
 
-# ./out/<skill-name>-report.json   ← 原始 JSON（同 stdout 输出）
-# ./out/<skill-name>-report.html   ← 自包含单文件 HTML，零依赖
-# ./out/<skill-name>-report.md     ← GitHub-flavored markdown
+```text
+<skill-name>-report.json   原始评分 JSON（与 stdout 同内容）
+<skill-name>-report.html   自包含单文件 HTML（含 ZH/EN 切换、@media print 打印样式）
+<skill-name>-report.md     GitHub-flavored Markdown
 ```
 
-HTML 报告的视觉风格与 `web/` 端完全一致：暖色调 brand 主色、glass 卡片、5 大支柱配色、双 KPI 卡（通用 + 金融）、内联 SVG 雷达图、暗色模式、`@media print` 优化样式。启用了金融专家版时，详细报告会以 **「金融专家版 / 通用版」 tab** 切换展示，默认进入金融视图（与 web 端 `activeReportTab` 行为一致）；hero 摘要和证书永远在 tab 之外作为全局信息。**用浏览器打开后按 Cmd+P 即可导出漂亮 PDF**——打印时会自动同时输出金融和通用两份完整章节，不需要装额外依赖。
+`--agent-prompt` 模式下，`--output-dir` 还会落盘 `<skill-name>-agent-deep-review-prompt.md`。
 
-`--agent-prompt` 模式同样支持 `--output-dir`，会把 deep review 提示词写成 `<skill-name>-agent-deep-review-prompt.md`。
-
-### Pipeline / 多子 skill 包评测
-
-当被测的 skill 包不是单一 SKILL.md 而是含多个子 SKILL.md 的"流水线"或"工具集"时，SkillLens 自动识别结构并切换评测视角，避免给出"在主 SKILL.md 里把 schema / workflow 重写一遍"这种 atomic-style 噪声建议。
-
-**核心机制**：
-
-- **自动检测 + 显式覆盖**：CLI 用 `--skill-type {auto,atomic,pipeline,composite}`（默认 `auto`）；Web Uploader 上方提供 4 选项卡片。`auto` 会数子 SKILL.md 数量，≥1 个就标记为 pipeline。
-- **三类型差异化 rubric**：见上文「评测什么」。每条 check 通过 `applies_to: [atomic|pipeline|composite]` 字段声明适用范围，不在名单里的直接 `not_applicable`、不送 LLM、不进 Top 改进建议、也不进 pillar 分母。一个 dim 下所有 check 都被过滤时，整个 dim 退出归一化（剩余 dim 自动重分布权重）。
-- **pipeline / composite lens prompt**：CLI 与 Web 都会在 system prompt 里注入一段"不要按 atomic 标准扣分；评估重点是路由清晰度 / 子 agent 边界 / IO 协议 / 部分失败处理 / 子 skill 自洽"等指令，引导 LLM 在新维度上给出有意义的 evidence 和 fix。
-- **附件优先级**：所有子 SKILL.md 优先打包给 LLM（每份 8000 字符配额，永不被挤掉），其他附件维持 4000 字符。
-- **报告展示**：HTML / Markdown / Web 三端的 meta 卡片显示 `Skill type: pipeline (auto-detected)`，下方独立卡片列出全部子 SKILL.md。每个 pillar 默认只展开当前类型适用的 dim；fully N/A 的 dim 折叠到底部一个"查看 N 个对当前 skill 类型不适用的维度"按钮里，避免噪声。
-
-```bash
-# CLI: 指定为 pipeline，强制用 pipeline lens
-python3 skills/skill-scorer/scripts/score.py \
-  --skill-type pipeline \
-  --output-dir ./out \
-  ./my-pipeline-package
-
-# CLI: 默认 auto，按子 SKILL.md 数量自动判断
-python3 skills/skill-scorer/scripts/score.py --output-dir ./out ./my-skill
-```
-
-**扩展指南**：要给更多 check 设置 scope，在 `rubric.yaml` 加 `applies_to` 字段，再跑 `python3 skills/skill-scorer/scripts/sync_rubric_to_ts.py` 同步到 web 镜像。新增 pipeline / composite 专属维度还需要在 `scripts/score.py::render_skill_type_block` 与 `web/lib/llm/prompts.ts::renderSkillTypeBlock` 里给 LLM 一段 lens 提示，让 LLM 知道有这条新 dim 该如何评估。完整的 applies_to 清单与扩展示例见 [`skills/skill-scorer/USAGE.md`](skills/skill-scorer/USAGE.md#rubric-scope-filter-applies_to)。
-
-### 报告 UI 中英文切换
-
-HTML 报告内置中英双语视图：默认中文，header 右上角的 `EN / 中` 按钮一键切换，选择会写入 localStorage 记忆；URL 加 `?lang=zh` / `?lang=en` 可强制覆盖（适合分享单语版本）。打印 PDF 时只会输出当前选中的那一份语言。
-
-但 LLM 返回的 `evidence` / `fix` 文字以及子 SKILL.md 的 description 是 **作者 / 模型原始内容**，HTML 渲染层不会改写——它们的语言由生成时决定：
-
-- **CLI**：`--llm-language {auto,zh,en}`（默认 `auto`，跟随 SKILL.md 检测语言）。想让英文 skill 出中文 evidence/fix，加 `--llm-language zh` 即可——CLI 会在 agent prompt 里注入一段"用简体中文回答"的指令，code agent 调 LLM 时自动遵循。
-- **Web**：`runLlmReview(skill, rubric, { lang, outputLang: "zh" })` 透传 `outputLang`；`req.lang` 控制 prompt 主体（system / checks 描述）的语言，`outputLang` 单独控制 LLM 作答语言。
-
-```bash
-# 英文 skill，但要中文 Deep Review 报告
-python3 skills/skill-scorer/scripts/score.py \
-  --agent-prompt --llm-language zh ./my-english-skill > prompt.md
-```
+报告语言默认跟随 SKILL.md 主语言；`--llm-language {auto,zh,en}` 可强制 LLM 答复语言（例如英文 skill 让 LLM 出中文 evidence / fix）。
 
 ## 快速开始
+
+两条路径平行存在，按需选择即可。
+
+### Web UI（给人用）
 
 ```bash
 cd web
 npm install
-cp .env.example .env.local
-npm run dev
+cp .env.example .env.local      # 可选：填模型 key
+npm run dev                     # 打开 http://localhost:3000
 ```
 
-打开 `http://localhost:3000`。
-
-## 配置模型 Key
-
-如果要启用完整的 Deep Review，请在 `web/.env.local` 中至少填写一个模型服务商 key：
+填模型 key 才能跑完整 Deep Review，至少填一个：
 
 ```env
 DEEPSEEK_API_KEY=
 ANTHROPIC_API_KEY=
 ```
 
-如果部署到公网，建议开启浏览器同源保护，避免陌生用户或工具直接调用 `/api/llm` 消耗你的模型额度：
+公网部署时保留浏览器同源保护，避免外部工具直接打 `/api/llm` 消耗你的额度：
 
 ```env
 LLM_REQUIRE_BROWSER_REQUEST=1
 ```
 
-设置后，正常网页按钮无需输入令牌；接口只接受来自 SkillLens 页面发起的同源浏览器请求。若你还需要私有的服务端到服务端调用，可以额外设置 `LLM_ACCESS_TOKEN`，并在请求里携带 `x-skilllens-llm-token` 或 `Authorization: Bearer ...`。
+需要服务端到服务端调用可额外设置 `LLM_ACCESS_TOKEN`。其他可选环境变量、安全注意事项见 [`web/README.md`](web/README.md)。
 
-真实 key 必须只保存在 `.env.local` 或部署平台的 Secret Manager 中，不要提交到 GitHub。
+### CLI（给 code agent 用）
+
+不需要任何 key 就能跑规则分预览：
+
+```bash
+# 规则分预览（rule-only）
+python3 skills/skill-scorer/scripts/score.py <path-to-skill>
+
+# 大型 / 多子 skill 包：可显式指定类型（默认自动识别）
+python3 skills/skill-scorer/scripts/score.py --skill-type pipeline <path-to-package>
+
+# 导出 HTML + Markdown + JSON 三件套
+python3 skills/skill-scorer/scripts/score.py --output-dir ./out <path-to-skill>
+```
+
+需要完整 Deep Review 时用交互式向导，由 CLI 引导选择通用 / 金融专家版并打印官方三步命令：
+
+```bash
+python3 skills/skill-scorer/scripts/score.py --agent-wizard <path-to-skill>
+```
+
+完整调用契约（`--agent-prompt` → 模型 JSON → `--llm-results` 三步流、`deepReviewCertificate` 证书校验、金融专家版 `--domain finance --scenario <id>` 参数、可粘贴给 code agent 的提示词）见 [`skills/skill-scorer/USAGE.md`](skills/skill-scorer/USAGE.md)。
 
 ## 仓库结构
 
@@ -261,14 +219,29 @@ LLM_REQUIRE_BROWSER_REQUEST=1
 
 ## 开发
 
+**Web 端**（Next.js / TypeScript）：
+
 ```bash
 cd web
-npm run lint
-npm run typecheck
-npm run build
+npm run lint        # ESLint
+npm run typecheck   # tsc --noEmit
+npm run build       # 生产构建
 ```
 
-更多运行和配置细节见 `web/README.md`。
+**CLI / rubric 端**（Python，无虚拟环境，仅依赖 `pyyaml`）：
+
+```bash
+# 改完 rubric.yaml 后必跑：检查 web/lib/rubric/rubric.ts 镜像是否同步
+python3 skills/skill-scorer/scripts/sync_rubric_to_ts.py --check
+
+# 镜像不同步时直接重新生成
+python3 skills/skill-scorer/scripts/sync_rubric_to_ts.py
+
+# 跑某个 example skill 的规则分回归（不耗 LLM 额度，秒级返回）
+python3 skills/skill-scorer/scripts/score.py skills/skill-scorer/examples/pr-reviewer
+```
+
+修改 rubric 后请同时回归 atomic / pipeline / composite 三种类型的样例（`pr-reviewer` / `pr-pipeline` / 自建 composite fixture），确保 `applies_to` 过滤和 pillar 归一化没被破坏。Web 部署细节见 [`web/README.md`](web/README.md)。
 
 ## 安全注意事项
 

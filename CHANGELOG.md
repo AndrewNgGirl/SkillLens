@@ -1,17 +1,29 @@
 # Changelog
 
-## 0.4.0
+## 0.4.0 — Type-Aware Rubric & Shareable Offline Reports
 
-### Pipeline / Composite Differentiated Rubric
+Two independent shifts land together. **First**, the rubric is now skill-type-aware: pipeline orchestrators and composite toolkits are no longer scored as if they were atomic single-purpose skills, so reports stop nagging pipelines to "rewrite the schema in the root SKILL.md" and start asking the questions that actually matter for that shape. **Second**, the CLI now produces a polished offline report — JSON, GitHub-flavored Markdown, and a self-contained HTML that visually matches the web UI and exports to PDF via the browser's Cmd+P — so evaluation results are easy to share without standing up the web app.
 
-- Added skill-type-aware rubric: every check now declares `applies_to: [atomic | pipeline | composite]`. Out-of-scope checks are emitted as `not_applicable`, kept out of the LLM prompt, kept out of Top Improvements, and kept out of the pillar denominator. When all checks in a dimension are filtered, the whole dimension is dropped from renormalization so pillar scores stay on the same 0–20 / 0–25 scale across types.
-- Added 5 pipeline-only dimensions under `reliability`: routing design, sub-agent boundaries, IO protocol, partial-failure handling, and a rule-class sub-skill self-containment scanner that walks every child SKILL.md for `when-to-use` and `workflow` sections.
-- Added 4 composite-only dimensions under `reliability`: tool index, orthogonality, consistency, and discoverability — for skill bundles that are toolkits rather than orchestrators.
-- Added `applies_to=[atomic]` on `market.scope_focus.disciplined`, `act.steps_atomic`, `act.io_explicit`, `struct.has_workflow`, and `rel.output_validation.*`; `applies_to=[atomic, composite]` on `cost.reference_layering.has_dirs` and `rel.script_fallback.has_scripts`. Pipeline reports stop suggesting "rewrite the schema in the root SKILL.md" or "add scripts/ for fallback".
-- Updated the Agent CLI prompt and web LLM prompt with explicit pipeline / composite lens paragraphs that point the model at the new dimension IDs.
-- Updated CLI `render_report.py` and web `PillarSection.tsx` to fold fully-N/A dimensions into a "show N dimensions not applicable to this skill type" toggle at the bottom of each pillar (default collapsed).
-- Updated `score.py` to surface `appliesTo`, `notApplicable`, and `originalWeight` on every check / dimension so downstream renderers have everything needed for the new UX.
-- Mirrored the rubric expansion into `web/lib/rubric/rubric.ts` via `sync_rubric_to_ts.py`; added the `rel.pipeline_subskill_quality.self_contained` rule to `web/lib/scoring/rules.ts` so web-side rule scoring stays in lockstep with Python CLI.
+### Highlights
+
+- **Fair scores across shapes**: atomic / pipeline / composite each activate the dimensions that fit their structure; the pillar caps (20 / 25 / etc.) stay constant, so totals are directly comparable across types.
+- **Pipeline & composite get the right questions**: 9 new reliability dimensions ask about routing design, sub-agent boundaries, IO protocol, partial-failure handling, sub-skill self-containment (pipeline), and tool index, orthogonality, consistency, discoverability (composite).
+- **No more type-mismatched suggestions**: pipeline reports stop demanding `scripts/` fallback or a root-level schema rewrite; composite reports stop demanding a single linear workflow.
+- **Cleaner dashboards**: each pillar shows only the dimensions applicable to the current skill type by default; the rest fold into a "show N dimensions not applicable" toggle at the bottom.
+- **Shareable offline reports from the CLI**: `--output-dir` writes JSON + self-contained HTML + Markdown side by side. The HTML matches the web UI visually (brand colors, radar, dimension cards, ZH/EN toggle, dark mode) and **exports to PDF via the browser's Cmd+P** — zero extra dependency, no headless Chrome, no Pandoc.
+
+### What's new
+
+- New `applies_to: [atomic | pipeline | composite]` field on every rubric check and dimension, gating which skill types each criterion participates in.
+- 5 pipeline-only dimensions under `reliability`: `pipeline_routing`, `pipeline_boundaries`, `pipeline_io_protocol`, `pipeline_partial_failure`, `pipeline_subskill_quality` (a rule-class scanner that walks every child SKILL.md for when-to-use and workflow sections).
+- 4 composite-only dimensions under `reliability`: `composite_tool_index`, `composite_orthogonality`, `composite_consistency`, `composite_discoverability`.
+- 8 existing checks scoped atomic-only (`scope_focus`, `steps_atomic`, `io_explicit`, `has_workflow`, `output_validation.*`); 2 scoped atomic + composite (`reference_layering`, `script_fallback`).
+- CLI Agent prompt and web Deep Review prompt both inject pipeline / composite lens paragraphs that point the LLM at the new dimension IDs and the right evaluation standards.
+- New CLI flag `--output-dir <dir>` writes three artifacts: `<skill-name>-report.{json,html,md}`. Under `--agent-prompt`, the prompt itself is also written as `<skill-name>-agent-deep-review-prompt.md` for easy hand-off to a code agent. Default stdout behavior is preserved when the flag is absent (no breaking change).
+- HTML report features: tabbed General / Finance Expert view (Finance shown first when `--domain finance` is set), inline SVG radar, ZH/EN toggle persisted to `localStorage`, `?lang=zh|en` URL override, `@media print` styles tuned so Cmd+P produces a clean PDF without a headless browser pipeline.
+- New CLI flag `--llm-language {auto,zh,en}` decouples the LLM answer language from the SKILL.md source language, so e.g. an English skill can still produce Chinese `evidence` / `fix` for a Chinese reviewer.
+- Two pipeline example skills shipped: `pr-pipeline` (2 sub-agents, minimal) and `mega-pipeline` (53 sub-agents, realistic-scale stress test).
+- **JSON schema additions** (relevant if you parse the output yourself or in CI): each check / dimension now carries `appliesTo`, `notApplicable`, and `originalWeight`. Existing fields are unchanged.
 
 ## 0.3.0
 
@@ -49,18 +61,30 @@
 
 # 更新日志
 
-## 0.4.0
+## 0.4.0 — 类型感知评分标准 & 可分享离线报告
 
-### Pipeline / Composite 差异化 rubric
+这一版同时落地两件相对独立的事。**其一**，评分标准（rubric）改为 skill 类型感知：pipeline 编排器与 composite 工具集不再被按 atomic 单体 skill 评分，报告不再出现"在根 SKILL.md 里把 schema 重写一遍"这种类型错配建议，转而问每种形态真正应该回答的问题。**其二**，CLI 现在能一键产出可分享的离线报告——JSON、GitHub-flavored Markdown，再加一份视觉对齐 Web UI、浏览器 Cmd+P 即可导出 PDF 的自包含 HTML——评测结果不必再起 web 应用就能直接分发。
 
-- 新增 skill 类型感知的 rubric：每个 check 都声明 `applies_to: [atomic | pipeline | composite]`。不在名单的 check 直接 `not_applicable`：不送 LLM、不进 Top 改进建议、也不进 pillar 分母。当一个 dim 下所有 check 都被过滤时，整个 dim 退出归一化（剩余 dim 自动重分布权重），保证 pillar 分数仍维持 0–20 / 0–25 的统一刻度。
-- 在 `reliability` pillar 新增 5 个 pipeline 专属维度：路由设计、子 agent 边界、IO 协议、部分失败处理、子 skill 自洽性（rule 类，会自动扫描每个子 SKILL.md 是否含 when-to-use 与 workflow 章节）。
-- 在 `reliability` pillar 新增 4 个 composite 专属维度：工具索引、正交性、一致性、可发现性，专门面向"工具集型"而非"编排器型"的 skill 包。
-- 给 `market.scope_focus.disciplined`、`act.steps_atomic`、`act.io_explicit`、`struct.has_workflow`、`rel.output_validation.*` 标记 `applies_to=[atomic]`；给 `cost.reference_layering.has_dirs` 与 `rel.script_fallback.has_scripts` 标记 `applies_to=[atomic, composite]`。pipeline 报告不再出现"在主 SKILL.md 重写 schema"或"加 scripts/ 兜底"这种类型错配建议。
-- Agent CLI prompt 与 web LLM prompt 都加了明确的 pipeline / composite lens 段落，把新维度 ID 直接告诉 LLM。
-- CLI `render_report.py` 与 web `PillarSection.tsx` 都改为：默认只展示当前类型适用的 dim，fully N/A 的 dim 折叠到底部 "查看 N 个对当前 skill 类型不适用的维度" 按钮里。
-- `score.py` 在每个 check / dimension 上回传 `appliesTo`、`notApplicable`、`originalWeight`，让所有渲染层都拿得到重组所需信息。
-- `sync_rubric_to_ts.py` 已把新 rubric 同步到 `web/lib/rubric/rubric.ts`；同时在 `web/lib/scoring/rules.ts` 实现了 `rel.pipeline_subskill_quality.self_contained` 规则，保证 web rule scoring 与 Python CLI 行为一致。
+### 亮点
+
+- **三种形态分数公平可比**：atomic / pipeline / composite 各自启用一组适配的维度；pillar 上限（20 / 25 等）保持不变，三种类型的总分可以直接对比。
+- **pipeline 与 composite 终于被问对问题**：reliability 下新增 9 个维度，针对 pipeline 评估路由设计、子 agent 边界、IO 协议、部分失败处理、子 skill 自洽性；针对 composite 评估工具索引、正交性、一致性、可发现性。
+- **告别类型错配建议**：pipeline 报告不再要求加 `scripts/` 兜底或在根 SKILL.md 重写 schema；composite 报告不再要求一条线性 workflow。
+- **报告默认只看相关项**：每个 pillar 默认只展示当前类型适用的维度，其余折叠在底部"查看 N 个不适用维度"按钮里，避免噪声。
+- **CLI 一键导出可分享离线报告**：加 `--output-dir` 即可同时落盘 JSON + 自包含 HTML + GitHub-flavored Markdown 三件套。HTML 视觉与 Web UI 一致（品牌色、雷达图、维度卡、中英切换、暗色模式），**用浏览器打开后 Cmd+P 直接出 PDF**——零额外依赖，不需要 headless Chrome、不需要 Pandoc。
+
+### 新增功能
+
+- rubric 的每个 check 与 dimension 都新增 `applies_to: [atomic | pipeline | composite]` 字段，控制哪些 skill 类型参与该项评分。
+- `reliability` pillar 新增 5 个 pipeline 专属维度：`pipeline_routing`、`pipeline_boundaries`、`pipeline_io_protocol`、`pipeline_partial_failure`、`pipeline_subskill_quality`（rule 类，自动扫描每个子 SKILL.md 是否含 when-to-use 与 workflow 章节）。
+- `reliability` pillar 新增 4 个 composite 专属维度：`composite_tool_index`、`composite_orthogonality`、`composite_consistency`、`composite_discoverability`。
+- 8 条已有 check 标记为 atomic-only（`scope_focus`、`steps_atomic`、`io_explicit`、`has_workflow`、`output_validation.*`）；2 条标记为 atomic + composite（`reference_layering`、`script_fallback`）。
+- CLI Agent prompt 与 web Deep Review prompt 都注入 pipeline / composite lens 段落，把新维度 ID 与对应评估标准直接告诉 LLM。
+- CLI 新增 `--output-dir <dir>` 参数，一次输出 `<skill-name>-report.{json,html,md}` 三份产物；`--agent-prompt` 模式下还会落盘 `<skill-name>-agent-deep-review-prompt.md`，方便直接交给 code agent。不加该参数时保留原有 stdout 行为，向后兼容。
+- HTML 报告新特性：通用 / 金融专家版 tab 切换（启用 `--domain finance` 时金融视图默认在前）、内联 SVG 雷达图、中英切换并写入 `localStorage`、`?lang=zh|en` URL 覆盖、`@media print` 样式调优——Cmd+P 出的 PDF 不需要任何无头浏览器流水线。
+- CLI 新增 `--llm-language {auto,zh,en}`，把 LLM 答复语言与 SKILL.md 源语言解耦——英文 skill 也能让 LLM 输出中文 `evidence` / `fix`，方便中文 reviewer 阅读。
+- 新增 2 个 pipeline 示例：`pr-pipeline`（2 子 agent，最小演示）与 `mega-pipeline`（53 子 agent，真实规模压测）。
+- **JSON schema 新增字段**（自定义解析输出 / CI 集成方需关注）：每个 check / dimension 上新增 `appliesTo`、`notApplicable`、`originalWeight`。原有字段保持不变。
 
 ## 0.3.0
 
